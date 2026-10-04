@@ -273,7 +273,8 @@ function render() {
   const xv = s.stk[0];
   const full = formatFull(xv);
   const shown = calc.format(xv).replace(/,/g, '');
-  $('full').textContent = !calc.entering && full !== shown ? '≈ ' + full : '';
+  // The message takes the left side of the info row; ≈ shows when there is none.
+  $('full').textContent = !msg.textContent && !calc.entering && full !== shown ? '≈ ' + full : '';
   const si = formatSI(xv);
   $('si').textContent = si && /[a-zµ]/i.test(si) ? si : '';
 
