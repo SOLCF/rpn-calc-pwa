@@ -5,14 +5,15 @@ const STORE_KEY = 'rpn-sci-state';
 const calc = new RpnCalc();
 let undoSnap = null;
 let shift = false;
-let pending = null; // 'STO' | 'RCL' while waiting for a register digit
 let note = null;    // transient non-error message
 
 const $ = (id) => document.getElementById(id);
 
+const DR_NOTE = { 2: '×2.0（半径→直径）', 0.5: '×0.5（直径→半径）', 1: '×1.0（元の値）' };
+
 // ---------------------------------------------------------------- keypad
 
-// [label, class, action, shifted label, shifted action]
+// [label, class, action, shifted label, shifted action, hint]
 const KEYS = [
   ['SHIFT', 'shiftkey', 'SHIFT'], ['x⇄y', 'stack', 'SWAP'], ['R↓', 'stack', 'RDN', 'R↑', 'RUP'],
   ['LSTx', 'stack', 'LASTX'], ['↶', 'edit', 'UNDO'],
@@ -21,7 +22,7 @@ const KEYS = [
   ['x²', 'fn', 'SQ'], ['√x', 'fn', 'SQRT'], ['yˣ', 'fn', 'POW'], ['ˣ√y', 'fn', 'ROOT'],
   ['EEX', 'edit', 'EEX'],
   ['log', 'fn', 'LOG', '10ˣ', 'EXP10'], ['ln', 'fn', 'LN', 'eˣ', 'EXP'],
-  ['STO', 'mem', 'STO'], ['RCL', 'mem', 'RCL'], ['%', 'fn', 'PCT', 'Δ%', 'DPCT'],
+  ['D⇄R', 'mem', 'DR'], ['弧長', 'mem arc', 'ARC', null, null, 'Y⌀ X°'], ['%', 'fn', 'PCT', 'Δ%', 'DPCT'],
   ['7', 'num', '7'], ['8', 'num', '8'], ['9', 'num', '9'], ['÷', 'op', 'DIV'], ['CLR', 'danger', 'CLR'],
   ['4', 'num', '4'], ['5', 'num', '5'], ['6', 'num', '6'], ['×', 'op', 'MUL'], ['CLX', 'edit', 'CLX'],
   ['1', 'num', '1'], ['2', 'num', '2'], ['3', 'num', '3'], ['−', 'op', 'SUB'], ['⌫', 'edit', 'BS'],
@@ -30,7 +31,7 @@ const KEYS = [
 
 function buildKeys() {
   const pad = $('keys');
-  for (const [label, cls, action, alt, altAction] of KEYS) {
+  for (const [label, cls, action, alt, altAction, hint] of KEYS) {
     const b = document.createElement('button');
     b.className = 'k ' + cls + (alt ? ' has-alt' : '');
     b.dataset.act = action;
@@ -44,6 +45,12 @@ function buildKeys() {
       b.innerHTML = '<span class="main"></span>';
     }
     b.querySelector('.main').textContent = label;
+    if (hint) {
+      const h = document.createElement('small');
+      h.className = 'hint';
+      h.textContent = hint;
+      b.appendChild(h);
+    }
     pad.appendChild(b);
   }
   // pointerdown reacts instantly on touch; click would wait for release.
@@ -65,6 +72,7 @@ function perform(action) {
     case 'CHS': return calc.chs();
     case 'EEX': return calc.eex();
     case '.': return calc.point();
+    case 'DR': return calc.drCycle();
     case 'UNDO': {
       if (!undoSnap) return false;
       const cur = calc.snapshot();
@@ -78,20 +86,9 @@ function perform(action) {
   }
 }
 
-// One key press from the keypad (handles SHIFT and STO/RCL prefixes).
+// One key press from the keypad (handles SHIFT).
 function press(action) {
   note = null;
-  if (pending) {
-    const which = pending;
-    pending = null;
-    if (/^[0-9]$/.test(action)) {
-      const n = +action;
-      act(() => (which === 'STO' ? calc.sto(n) : calc.rcl(n)));
-      if (which === 'STO') note = `R${n} に保存`;
-    }
-    render(); // any other key just cancels
-    return;
-  }
   if (action === 'SHIFT') {
     shift = !shift;
     vibrate(8);
@@ -99,13 +96,6 @@ function press(action) {
     return;
   }
   shift = false;
-  if (action === 'STO' || action === 'RCL') {
-    pending = action;
-    note = `${action} → 0〜9`;
-    vibrate(8);
-    render();
-    return;
-  }
   act(() => perform(action));
 }
 
@@ -134,6 +124,8 @@ function render() {
   $('digits').classList.toggle('off', s.mode === 'STD');
   $('grp').classList.toggle('on', s.group);
 
+  const f = calc.drFactor();
+  if (f !== null && !calc.msg) note = DR_NOTE[f];
   const msg = $('msg');
   msg.textContent = calc.msg ?? note ?? '';
   msg.classList.toggle('note', !calc.msg && !!note);
@@ -153,19 +145,8 @@ function render() {
   const si = formatSI(xv);
   $('si').textContent = si && /[a-zµ]/i.test(si) ? si : '';
 
-  const regs = $('regs');
-  regs.replaceChildren();
-  s.reg.forEach((v, i) => {
-    if (v === 0) return;
-    const r = document.createElement('span');
-    r.innerHTML = `<b>R${i}</b>`;
-    r.append(calc.format(v));
-    regs.appendChild(r);
-  });
-
   const pad = $('keys');
   pad.classList.toggle('shifted', shift);
-  pad.classList.toggle('pending', !!pending);
   for (const k of pad.querySelectorAll('.has-alt')) {
     k.querySelector('.main').textContent = shift ? k.dataset.altLabel : k.dataset.label;
   }
@@ -212,7 +193,7 @@ const KEYMAP = {
   Enter: 'ENTER', ' ': 'ENTER', Backspace: 'BS', Escape: 'CLX', Delete: 'CLR',
   '+': 'ADD', '-': 'SUB', '*': 'MUL', '/': 'DIV', '^': 'POW', '%': 'PCT',
   '.': '.', ',': '.', e: 'EEX', E: 'EEX', n: 'CHS', s: 'SWAP', r: 'RDN', R: 'RUP',
-  l: 'LASTX', q: 'SQRT', i: 'INV', p: 'PI', ArrowUp: 'RUP', ArrowDown: 'RDN',
+  l: 'LASTX', q: 'SQRT', i: 'INV', p: 'PI', d: 'DR', a: 'ARC', ArrowUp: 'RUP', ArrowDown: 'RDN',
 };
 
 function onKey(e) {

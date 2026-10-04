@@ -94,7 +94,7 @@ const X = (c) => c.s.stk[0];
   c.exec('ADD'); eq(X(c), 230, 'add percent');
   c.exec('CLR'); type(c, '80 100'); c.exec('DPCT'); eq(X(c), 25, 'delta %');
 }
-{ // stack ops, LASTX, PI, memories, undo
+{ // stack ops, LASTX, PI, undo
   const c = new RpnCalc();
   type(c, '1 2 3 4');
   c.exec('RDN'); eq(c.s.stk.join(), '3,2,1,4', 'rdn');
@@ -105,12 +105,34 @@ const X = (c) => c.s.stk[0];
   type(c, '9 3'); c.exec('DIV'); c.exec('LASTX'); eq(X(c), 3, 'lastx'); eq(c.s.stk[1], 3, 'lastx lifts');
   c.exec('CLR');
   type(c, '2'); c.exec('PI'); eq(c.s.stk[1], 2, 'pi lifts'); c.exec('MUL'); near(X(c), 2 * Math.PI, '2pi');
-  type(c, '9.80665'); c.sto(3); eq(c.s.reg[3], 9.80665, 'sto');
-  c.exec('CLR'); type(c, '10'); c.rcl(3); c.exec('MUL'); near(X(c), 98.0665, 'rcl lifts');
-  check(!c.sto(10), 'bad register');
   const snap = c.snapshot();
   c.exec('SQ');
-  c.restore(snap); near(X(c), 98.0665, 'undo');
+  c.restore(snap); near(X(c), 2 * Math.PI, 'undo');
+}
+{ // diameter/radius toggle cycles x2, x0.5, x1 of the original value
+  const c = new RpnCalc();
+  type(c, '25');
+  c.drCycle(); eq(X(c), 50, 'dr x2'); eq(c.drFactor(), 2, 'factor 2');
+  c.drCycle(); eq(X(c), 12.5, 'dr x0.5');
+  c.drCycle(); eq(X(c), 25, 'dr x1');
+  c.drCycle(); eq(X(c), 50, 'dr wraps');
+  eq(c.s.lastX, 0, 'dr leaves lastX');
+  c.exec('ENTER'); eq(c.drFactor(), null, 'other key ends cycle');
+  c.drCycle(); eq(X(c), 100, 'new base after other key');
+  c.exec('CLR'); type(c, '10'); c.drCycle(); type(c, '3');
+  eq(c.s.stk[1], 20, 'typing after dr lifts'); eq(X(c), 3, 'typed value');
+  c.drCycle(); eq(X(c), 6, 'dr on typed entry');
+  const snap = c.snapshot(); c.drCycle(); c.restore(snap);
+  eq(X(c), 6, 'undo dr'); c.drCycle(); eq(X(c), 12, 'restart after undo');
+}
+{ // arc length: Y = diameter mm, X = angle deg
+  const c = new RpnCalc();
+  type(c, '100 90'); c.exec('ARC'); near(X(c), 25 * Math.PI, 'arc 90deg');
+  eq(c.s.lastX, 90, 'arc lastx');
+  c.exec('CLR'); type(c, '50 360'); c.exec('ARC'); near(X(c), 50 * Math.PI, 'full circle');
+  c.setDeg(false);
+  c.exec('CLR'); type(c, '100 180'); c.exec('ARC'); near(X(c), 50 * Math.PI, 'arc ignores RAD mode');
+  c.exec('CLR'); type(c, '1 2 3'); c.exec('ARC'); eq(c.s.stk[1], 1, 'arc drops stack');
 }
 { // formatting
   eq(formatNumber(1234567.891), '1,234,567.891', 'std group');
@@ -137,10 +159,10 @@ const X = (c) => c.s.stk[0];
 }
 { // JSON round trip and validation
   const c = new RpnCalc();
-  type(c, '1.5E3~'); c.sto(1); c.setMode('ENG'); c.setDeg(false);
+  type(c, '1.5E3~'); c.setMode('ENG'); c.setDeg(false);
   const d = new RpnCalc();
   check(d.loadJSON(JSON.parse(JSON.stringify(c.toJSON()))), 'load');
-  eq(d.s.stk[0], 1.5e-3, 'json x'); eq(d.s.reg[1], 1.5e-3, 'json reg');
+  eq(d.s.stk[0], 1.5e-3, 'json x');
   eq(d.s.mode, 'ENG', 'json mode'); eq(d.s.deg, false, 'json rad');
   check(!d.loadJSON({ stk: ['ff', '0', '0', '0'], ws: 32 }), 'old programmer state rejected');
 }

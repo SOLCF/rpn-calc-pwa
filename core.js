@@ -1,8 +1,8 @@
 // RPN scientific calculator core (decimal, IEEE double).
-// HP style 4-level stack (X, Y, Z, T) with stack lift, LAST X, memories.
+// HP style 4-level stack (X, Y, Z, T) with stack lift and LAST X.
 
 export const MODES = ['STD', 'FIX', 'SCI', 'ENG'];
-export const NREG = 10;
+export const DR_FACTORS = [1, 2, 0.5];
 
 const SI = { '-15': 'f', '-12': 'p', '-9': 'n', '-6': 'µ', '-3': 'm', 0: '', 3: 'k', 6: 'M', 9: 'G', 12: 'T' };
 
@@ -10,7 +10,6 @@ export function defaultState() {
   return {
     stk: [0, 0, 0, 0], // X, Y, Z, T
     lastX: 0,
-    reg: new Array(NREG).fill(0),
     deg: true,
     mode: 'STD',
     digits: 4,
@@ -154,6 +153,7 @@ const BINARY = {
   MUL: (y, x) => y * x,
   DIV: (y, x) => (x === 0 ? NaN : y / x),
   POW: (y, x) => (y === 0 && x < 0 ? NaN : y ** x),
+  ARC: (y, x) => (Math.PI * y * x) / 360, // arc length: Y = diameter, X = degrees
   ROOT: (y, x) => { // x-th root of y; odd roots of negatives are real
     if (x === 0) return NaN;
     if (y < 0 && Number.isInteger(x) && Math.abs(x) % 2 === 1) return -((-y) ** (1 / x));
@@ -176,6 +176,7 @@ export class RpnCalc {
     this.s = defaultState();
     this.clearEntry();
     this.msg = null;
+    this.dr = null;
   }
 
   clearEntry() {
@@ -219,6 +220,7 @@ export class RpnCalc {
 
   startEntry() {
     if (this.entering) return;
+    this.dr = null;
     if (this.s.lift) this.push();
     this.clearEntry();
     this.entering = true;
@@ -270,6 +272,7 @@ export class RpnCalc {
 
   backspace() {
     this.msg = null;
+    this.dr = null;
     if (!this.entering) return this.exec('DROP');
     if (this.expo !== null) {
       if (this.expo === '') {
@@ -294,6 +297,7 @@ export class RpnCalc {
 
   chs() {
     this.msg = null;
+    this.dr = null;
     if (this.entering) {
       return this.editEntry(() => {
         if (this.expo !== null) this.expNeg = !this.expNeg;
@@ -319,6 +323,7 @@ export class RpnCalc {
   exec(op) {
     this.finishEntry();
     this.msg = null;
+    this.dr = null;
     const s = this.s;
     const k = s.stk;
     const x = k[0], y = k[1];
@@ -389,20 +394,31 @@ export class RpnCalc {
     return true;
   }
 
-  sto(n) {
+  // Diameter/radius toggle: successive presses show the original value
+  // x2.0, x0.5, x1.0, x2.0, ... Any other key makes X the new original.
+  drCycle() {
     this.finishEntry();
     this.msg = null;
-    if (!(n >= 0 && n < NREG)) return this.fail('Bad register');
-    this.s.reg[n] = this.s.stk[0];
+    const x = this.s.stk[0];
+    if (this.dr && this.dr.out === x) {
+      this.dr.step = (this.dr.step + 1) % DR_FACTORS.length;
+    } else {
+      this.dr = { base: x, step: 1 };
+    }
+    const v = this.dr.base * DR_FACTORS[this.dr.step];
+    if (!Number.isFinite(v)) {
+      this.dr = null;
+      return this.fail('Overflow');
+    }
+    this.s.stk[0] = v;
+    this.dr.out = v;
     this.s.lift = true;
     return true;
   }
 
-  rcl(n) {
-    this.finishEntry();
-    this.msg = null;
-    if (!(n >= 0 && n < NREG)) return this.fail('Bad register');
-    return this.recall(this.s.reg[n]);
+  // Current D/R factor while cycling, otherwise null.
+  drFactor() {
+    return this.dr && this.dr.out === this.s.stk[0] ? DR_FACTORS[this.dr.step] : null;
   }
 
   setMode(mode) {
@@ -444,13 +460,14 @@ export class RpnCalc {
 
   snapshot() {
     return {
-      s: { ...this.s, stk: [...this.s.stk], reg: [...this.s.reg] },
+      s: { ...this.s, stk: [...this.s.stk] },
       entry: [this.entering, this.mant, this.expo, this.neg, this.expNeg],
     };
   }
 
   restore(snap) {
-    this.s = { ...snap.s, stk: [...snap.s.stk], reg: [...snap.s.reg] };
+    this.s = { ...snap.s, stk: [...snap.s.stk] };
+    this.dr = null;
     [this.entering, this.mant, this.expo, this.neg, this.expNeg] = snap.entry;
     this.msg = null;
   }
@@ -466,7 +483,6 @@ export class RpnCalc {
     const s = this.s;
     s.stk = o.stk.map(num);
     s.lastX = num(o.lastX);
-    if (Array.isArray(o.reg)) s.reg = s.reg.map((_, i) => num(o.reg[i]));
     s.deg = o.deg !== false;
     s.mode = MODES.includes(o.mode) ? o.mode : 'STD';
     s.digits = Number.isInteger(o.digits) && o.digits >= 0 && o.digits <= 10 ? o.digits : 4;
