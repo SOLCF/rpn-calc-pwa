@@ -5,7 +5,7 @@
 // changed sw.js (bump VERSION), precaches it in the background and serves
 // it from the next launch.
 // Dev preview (localhost / Tailscale): network first, so edits show at once.
-const VERSION = 'rpn-2.3.2'; // keep in sync with version.js
+const VERSION = 'rpn-2.3.3'; // keep in sync with version.js
 const FILES = [
   './',
   'index.html',

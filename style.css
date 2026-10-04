@@ -350,6 +350,9 @@ header { display: flex; flex-direction: column; gap: 6px; }
 /* key help */
 #help { margin: 0; }
 #help dt { margin-top: 12px; font-size: 12px; font-weight: 700; color: var(--dim); letter-spacing: .08em; }
-#help dd { display: grid; grid-template-columns: 64px 1fr; gap: 10px; margin: 0; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+#help dd { display: grid; grid-template-columns: 92px 1fr; gap: 10px; margin: 0; padding: 8px 4px; border-bottom: 1px solid var(--line); }
 #help dd b { font-family: var(--mono); color: var(--accent); }
 #help dd span { font-size: 13px; color: var(--stk); line-height: 1.45; }
+
+.setting .btns { display: flex; flex: none; flex-direction: column; gap: 6px; }
+.pill:disabled { opacity: .35; }

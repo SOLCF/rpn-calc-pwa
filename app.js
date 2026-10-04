@@ -9,7 +9,7 @@ const SEEN_KEY = 'rpn-seen-version';
 
 const calc = new RpnCalc();
 const hist = new History(100);
-const prefs = { vibrate: true };
+const prefs = { vibrate: true, win: null }; // win: {w, h} fixed window size on PC
 let shift = false;
 let note = null; // transient non-error message
 
@@ -77,6 +77,31 @@ const HELP = [
     ['ENG', '指数を 3 の倍数にそろえる（12.35E3）'],
     ['X をタップ', '値をクリップボードにコピー'],
     ['≈ / 接頭辞', 'X の下に丸める前の値と、k・m などの SI 接頭辞表記を表示'],
+  ]],
+  // Keep in sync with KEYMAP / onKey below.
+  ['PC のキーボード', [
+    ['0〜9 .', '数字・小数点（, でも小数点）'],
+    ['Enter', 'ENTER（Space でも可）'],
+    ['Backspace', '⌫'],
+    ['Esc', 'CLX'],
+    ['Delete', 'CLR'],
+    ['+ - * /', '+ − × ÷'],
+    ['^', 'yˣ'],
+    ['%', '%'],
+    ['e', 'EEX'],
+    ['n', '±'],
+    ['s', 'x⇄y'],
+    ['r / ↓', 'R↓'],
+    ['R / ↑', 'R↑（R は Shift+r）'],
+    ['l', 'LSTx'],
+    ['q', '√x'],
+    ['i', '1/x'],
+    ['p', 'π'],
+    ['d', 'D⇄R'],
+    ['a', '弧長'],
+    ['Ctrl+Z', 'Undo'],
+    ['Ctrl+Y', 'Redo'],
+    ['その他', 'sin・log などはマウスでクリック。メニュー表示中は Esc で閉じる'],
   ]],
 ];
 
@@ -255,6 +280,7 @@ function render() {
   $('digits').classList.toggle('off', s.mode === 'STD');
   $('grp').classList.toggle('on', s.group);
   $('vib').classList.toggle('on', prefs.vibrate);
+  renderWindowSetting();
   $('rad').hidden = s.deg;
 
   const f = calc.drFactor();
@@ -400,6 +426,29 @@ function load() {
   if (!hist.loadJSON(read(HIST_KEY), calc.snapshot())) hist.clear(calc.snapshot());
   const p = read(PREFS_KEY);
   if (p && typeof p.vibrate === 'boolean') prefs.vibrate = p.vibrate;
+  if (p && p.win && Number.isFinite(p.win.w) && Number.isFinite(p.win.h)) prefs.win = { w: p.win.w, h: p.win.h };
+}
+
+// ---------------------------------------------------------------- PC window size
+
+// Only an installed app window on a PC can be resized by the page.
+const appWindowOnPC = () =>
+  matchMedia('(display-mode: standalone)').matches && matchMedia('(pointer: fine)').matches;
+
+function applyWindowSize() {
+  if (!prefs.win || !appWindowOnPC()) return;
+  try { window.resizeTo(prefs.win.w, prefs.win.h); } catch { /* not allowed */ }
+}
+
+function renderWindowSetting() {
+  const ok = appWindowOnPC();
+  $('win-fix').disabled = !ok;
+  $('win-free').disabled = !ok || !prefs.win;
+  $('win-status').textContent = !ok
+    ? 'PC にインストールしたアプリのウィンドウで使えます'
+    : prefs.win
+      ? `${prefs.win.w}×${prefs.win.h} で固定中（起動時にこのサイズで開く）`
+      : '固定していません';
 }
 
 // ---------------------------------------------------------------- physical keyboard
@@ -445,6 +494,7 @@ function onSetting(fn) {
 
 function init() {
   load();
+  applyWindowSize();
   buildKeys();
   buildHelp();
 
@@ -485,6 +535,8 @@ function init() {
   });
   $('grp').addEventListener('click', () => onSetting(() => calc.toggleGroup()));
   $('vib').addEventListener('click', () => onSetting(() => { prefs.vibrate = !prefs.vibrate; }));
+  $('win-fix').addEventListener('click', () => onSetting(() => { prefs.win = { w: outerWidth, h: outerHeight }; }));
+  $('win-free').addEventListener('click', () => onSetting(() => { prefs.win = null; }));
   // Anything not served from GitHub Pages (localhost, the Tailscale preview) is a dev build.
   const dev = !location.hostname.endsWith('github.io');
   $('ver').textContent = 'v' + VERSION + (dev ? ' 開発版' : '');
