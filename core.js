@@ -1,41 +1,171 @@
-// RPN programmer's calculator core. Port of cardputer-rpn/src/rpn_core.cpp
-// using BigInt for 64-bit words. HP-16C style 4-level stack.
+// RPN scientific calculator core (decimal, IEEE double).
+// HP style 4-level stack (X, Y, Z, T) with stack lift, LAST X, memories.
 
-export const BASES = [16, 10, 8, 2];
-export const SIZES = [8, 16, 32, 64];
+export const MODES = ['STD', 'FIX', 'SCI', 'ENG'];
+export const NREG = 10;
 
-const DIGITS = '0123456789ABCDEF';
-
-function groupDigits(digits, base) {
-  const n = base === 10 || base === 8 ? 3 : 4;
-  const sep = base === 10 ? ',' : ' ';
-  let out = '';
-  const len = digits.length;
-  for (let i = 0; i < len; i++) {
-    if (i > 0 && (len - i) % n === 0) out += sep;
-    out += digits[i];
-  }
-  return out;
-}
-
-function digitValue(c) {
-  const d = DIGITS.indexOf(c.toUpperCase());
-  return c.length === 1 ? d : -1;
-}
+const SI = { '-15': 'f', '-12': 'p', '-9': 'n', '-6': 'µ', '-3': 'm', 0: '', 3: 'k', 6: 'M', 9: 'G', 12: 'T' };
 
 export function defaultState() {
   return {
-    stk: [0n, 0n, 0n, 0n], // X, Y, Z, T
-    lastX: 0n,
-    ws: 32,
-    base: 16,
-    sgn: true,
+    stk: [0, 0, 0, 0], // X, Y, Z, T
+    lastX: 0,
+    reg: new Array(NREG).fill(0),
+    deg: true,
+    mode: 'STD',
+    digits: 4,
     group: true,
-    carry: false,
-    overflow: false,
     lift: true,
   };
 }
+
+// ---------------------------------------------------------------- formatting
+
+function exponentOf(v) {
+  return parseInt(v.toExponential().split('e')[1], 10);
+}
+
+function groupInt(s, group) {
+  if (!group) return s;
+  const m = /^(-?)(\d+)(.*)$/.exec(s);
+  if (!m) return s;
+  return m[1] + m[2].replace(/\B(?=(\d{3})+(?!\d))/g, ',') + m[3];
+}
+
+function stripZeros(s) {
+  // "1.2300" -> "1.23", "5.000" -> "5"
+  return s.includes('.') ? s.replace(/\.?0+$/, '') : s;
+}
+
+function sci(v, d) {
+  const [m, e] = v.toExponential(d).split('e');
+  return `${m}E${parseInt(e, 10)}`;
+}
+
+// Mantissa/exponent with exponent a multiple of 3 and `sig` significant digits.
+function engParts(v, sig) {
+  let e3 = Math.floor(exponentOf(v) / 3) * 3;
+  let m = (v / 10 ** e3).toPrecision(sig);
+  if (Math.abs(parseFloat(m)) >= 1000) { // rounding carried over (999.96 -> 1000)
+    e3 += 3;
+    m = (v / 10 ** e3).toPrecision(sig);
+  }
+  return [m, e3];
+}
+
+export function formatNumber(v, mode = 'STD', digits = 4, group = true) {
+  if (!Number.isFinite(v)) return 'Error';
+  if (v === 0) v = 0; // drop -0
+  switch (mode) {
+    case 'FIX': {
+      if (Math.abs(v) >= 1e15) return sci(v, digits);
+      let s = v.toFixed(digits);
+      if (/^-0\.?0*$/.test(s)) s = s.slice(1);
+      return groupInt(s, group);
+    }
+    case 'SCI':
+      return sci(v, digits);
+    case 'ENG': {
+      if (v === 0) return (0).toFixed(digits);
+      const [m, e3] = engParts(v, digits + 1);
+      return e3 === 0 ? m : `${m}E${e3}`;
+    }
+    default: { // STD: 12 significant digits, trailing zeros removed
+      if (v === 0) return '0';
+      const e = exponentOf(Number(v.toPrecision(12)));
+      if (e >= 12 || e < -6) {
+        const [m, ex] = v.toExponential(11).split('e');
+        return `${stripZeros(m)}E${parseInt(ex, 10)}`;
+      }
+      return groupInt(stripZeros(Number(v.toPrecision(12)).toFixed(Math.max(0, 11 - e))), group);
+    }
+  }
+}
+
+// "12.35 k" style; null when outside the SI prefix range.
+export function formatSI(v) {
+  if (!Number.isFinite(v) || v === 0) return null;
+  const [m, e3] = engParts(v, 4);
+  if (!(String(e3) in SI)) return null;
+  return `${stripZeros(m)} ${SI[e3]}`.trim();
+}
+
+// Full precision for the "≈" line.
+export function formatFull(v) {
+  if (!Number.isFinite(v)) return 'Error';
+  if (v === 0) return '0';
+  const p = Number(v.toPrecision(15));
+  const e = exponentOf(p);
+  if (e >= 15 || e < -6) {
+    const [m, ex] = v.toExponential(14).split('e');
+    return `${stripZeros(m)}E${parseInt(ex, 10)}`;
+  }
+  return stripZeros(p.toFixed(Math.max(0, 14 - e)));
+}
+
+// ---------------------------------------------------------------- trig
+
+const D2R = Math.PI / 180;
+
+function norm360(d) {
+  return ((d % 360) + 360) % 360;
+}
+
+// Exact values at multiples of 30 deg so sin(180) is 0, not 1.2e-16.
+function sinDeg(d) {
+  const r = norm360(d);
+  const exact = { 0: 0, 30: 0.5, 90: 1, 150: 0.5, 180: 0, 210: -0.5, 270: -1, 330: -0.5 };
+  if (r in exact) return exact[r];
+  return Math.sin(d * D2R);
+}
+
+function cosDeg(d) {
+  const r = norm360(d);
+  const exact = { 0: 1, 60: 0.5, 90: 0, 120: -0.5, 180: -1, 240: -0.5, 270: 0, 300: 0.5 };
+  if (r in exact) return exact[r];
+  return Math.cos(d * D2R);
+}
+
+function tanDeg(d) {
+  const r = norm360(d) % 180;
+  if (r === 0) return 0;
+  if (r === 90) return NaN;
+  if (r === 45) return 1;
+  if (r === 135) return -1;
+  return Math.tan(d * D2R);
+}
+
+// ---------------------------------------------------------------- calculator
+
+const UNARY = {
+  INV: (x) => 1 / x,
+  SQ: (x) => x * x,
+  SQRT: (x) => Math.sqrt(x),
+  LOG: (x) => (x > 0 ? Math.log10(x) : NaN),
+  LN: (x) => (x > 0 ? Math.log(x) : NaN),
+  EXP10: (x) => 10 ** x,
+  EXP: (x) => Math.exp(x),
+  NEG: (x) => -x,
+};
+
+const BINARY = {
+  ADD: (y, x) => y + x,
+  SUB: (y, x) => y - x,
+  MUL: (y, x) => y * x,
+  DIV: (y, x) => (x === 0 ? NaN : y / x),
+  POW: (y, x) => (y === 0 && x < 0 ? NaN : y ** x),
+  ROOT: (y, x) => { // x-th root of y; odd roots of negatives are real
+    if (x === 0) return NaN;
+    if (y < 0 && Number.isInteger(x) && Math.abs(x) % 2 === 1) return -((-y) ** (1 / x));
+    return y ** (1 / x);
+  },
+};
+
+const ERRORS = {
+  DIV: 'Divide by 0', INV: 'Divide by 0', SQRT: 'Invalid input', LOG: 'Invalid input',
+  LN: 'Invalid input', ASIN: 'Invalid input', ACOS: 'Invalid input', TAN: 'Undefined',
+  ROOT: 'Invalid input', POW: 'Invalid input',
+};
 
 export class RpnCalc {
   constructor() {
@@ -44,20 +174,16 @@ export class RpnCalc {
 
   reset() {
     this.s = defaultState();
-    this.entry = '';
-    this.entering = false;
-    this.entryNeg = false;
+    this.clearEntry();
     this.msg = null;
   }
 
-  get mask() { return (1n << BigInt(this.s.ws)) - 1n; }
-  get signBit() { return 1n << BigInt(this.s.ws - 1); }
-
-  // Interpret as signed in the current word size (when signed mode).
-  sx(v) {
-    v &= this.mask;
-    if (this.s.sgn && (v & this.signBit)) v -= 1n << BigInt(this.s.ws);
-    return v;
+  clearEntry() {
+    this.entering = false;
+    this.mant = '';      // digits and '.'
+    this.expo = null;    // null = no EEX yet, else exponent digits
+    this.neg = false;
+    this.expNeg = false;
   }
 
   fail(m) {
@@ -74,168 +200,120 @@ export class RpnCalc {
 
   finishEntry() {
     if (!this.entering) return;
-    this.entering = false;
-    this.entryNeg = false;
-    this.entry = '';
+    this.clearEntry();
     this.s.lift = true;
   }
 
-  // Parsed entry value with range check, or null if it does not fit.
-  parseEntry() {
-    let limit = this.mask;
-    if (this.s.base === 10 && this.s.sgn) limit = this.entryNeg ? this.signBit : this.signBit - 1n;
-    let v = 0n;
-    const b = BigInt(this.s.base);
-    for (const c of this.entry) v = v * b + BigInt(digitValue(c));
-    if (v > limit) return null;
-    return this.entryNeg ? (-v) & this.mask : v;
+  entryText() {
+    let t = (this.neg ? '-' : '') + (this.mant || '0');
+    if (this.expo !== null) t += 'E' + (this.expNeg ? '-' : '') + this.expo;
+    return t;
   }
 
-  digit(c) {
-    this.msg = null;
-    const d = digitValue(c);
-    if (d < 0 || d >= this.s.base) return this.fail('Bad digit');
-    if (!this.entering) {
-      if (this.s.lift) this.push();
-      this.entering = true;
-      this.entryNeg = false;
-      this.entry = '';
-    }
-    const prev = this.entry;
-    if (this.entry === '0') this.entry = ''; // no leading zeros
-    this.entry += DIGITS[d];
-    const v = this.parseEntry();
-    if (v === null) {
-      this.entry = prev;
-      return this.fail('Too big');
+  entryValue() {
+    let t = (this.neg ? '-' : '') + (this.mant || '0');
+    if (this.mant === '.') t = (this.neg ? '-' : '') + '0';
+    if (this.expo) t += 'e' + (this.expNeg ? '-' : '') + this.expo;
+    return parseFloat(t);
+  }
+
+  startEntry() {
+    if (this.entering) return;
+    if (this.s.lift) this.push();
+    this.clearEntry();
+    this.entering = true;
+  }
+
+  // Applies an edit to the entry; rolls back if the value stops being finite.
+  editEntry(fn) {
+    const saved = [this.mant, this.expo, this.neg, this.expNeg];
+    fn();
+    const v = this.entryValue();
+    if (!Number.isFinite(v)) {
+      [this.mant, this.expo, this.neg, this.expNeg] = saved;
+      return this.fail('Overflow');
     }
     this.s.stk[0] = v;
     return true;
   }
 
+  digit(c) {
+    this.msg = null;
+    if (!/^[0-9]$/.test(c)) return this.fail('Bad digit');
+    this.startEntry();
+    if (this.expo !== null) {
+      if (this.expo.length >= 3) return this.fail('Too long');
+      return this.editEntry(() => { this.expo += c; });
+    }
+    if (this.mant.replace('.', '').length >= 15) return this.fail('Too long');
+    return this.editEntry(() => {
+      this.mant = this.mant === '0' ? c : this.mant + c;
+    });
+  }
+
+  point() {
+    this.msg = null;
+    this.startEntry();
+    if (this.expo !== null || this.mant.includes('.')) return false;
+    return this.editEntry(() => { this.mant = (this.mant || '0') + '.'; });
+  }
+
+  eex() {
+    this.msg = null;
+    this.startEntry();
+    if (this.expo !== null) return false;
+    return this.editEntry(() => {
+      if (!this.mant || /^0?\.?0*$/.test(this.mant)) this.mant = '1';
+      this.expo = '';
+    });
+  }
+
   backspace() {
     this.msg = null;
     if (!this.entering) return this.exec('DROP');
-    this.entry = this.entry.slice(0, -1);
-    if (this.entry === '') {
-      // Same as CLX: X=0 and the next number overwrites it.
-      this.entering = false;
-      this.entryNeg = false;
-      this.s.stk[0] = 0n;
-      this.s.lift = false;
-      return true;
+    if (this.expo !== null) {
+      if (this.expo === '') {
+        this.expo = null;
+        this.expNeg = false;
+      } else {
+        this.expo = this.expo.slice(0, -1);
+      }
+    } else {
+      this.mant = this.mant.slice(0, -1);
+      if (this.mant === '' || this.mant === '0') {
+        // Same as CLX: X=0 and the next number overwrites it.
+        this.clearEntry();
+        this.s.stk[0] = 0;
+        this.s.lift = false;
+        return true;
+      }
     }
-    this.s.stk[0] = this.parseEntry();
+    this.s.stk[0] = this.entryValue();
     return true;
   }
 
   chs() {
     this.msg = null;
-    if (this.entering && this.s.base === 10 && this.s.sgn) {
-      this.entryNeg = !this.entryNeg;
-      const v = this.parseEntry();
-      if (v === null) {
-        this.entryNeg = !this.entryNeg;
-        return this.fail('Too big');
-      }
-      this.s.stk[0] = v;
-      return true;
+    if (this.entering) {
+      return this.editEntry(() => {
+        if (this.expo !== null) this.expNeg = !this.expNeg;
+        else this.neg = !this.neg;
+      });
     }
     return this.exec('NEG');
   }
 
-  // Shift/rotate count from X. Negative counts are rejected in signed mode.
-  count(x) {
-    if (this.s.sgn && (x & this.signBit)) return this.fail('Bad count') || null;
-    return x;
-  }
-
-  binary(op, y, x) {
-    const s = this.s;
-    const m = this.mask;
-    const sb = this.signBit;
-    const ws = BigInt(s.ws);
-    let r, n;
+  trig(op, x) {
+    const deg = this.s.deg;
     switch (op) {
-      case 'ADD': {
-        const sum = y + x;
-        r = sum & m;
-        s.carry = sum > m;
-        s.overflow = ((~(y ^ x)) & (y ^ r) & sb) !== 0n;
-        return r;
-      }
-      case 'SUB':
-        r = (y - x) & m;
-        s.carry = y < x; // borrow
-        s.overflow = ((y ^ x) & (y ^ r) & sb) !== 0n;
-        return r;
-      case 'MUL': {
-        if (s.sgn) {
-          const p = this.sx(y) * this.sx(x);
-          s.overflow = p < -sb || p > sb - 1n;
-          r = p & m;
-        } else {
-          const p = y * x;
-          s.overflow = p > m;
-          r = p & m;
-        }
-        s.carry = false;
-        return r;
-      }
-      case 'DIV':
-      case 'MOD': {
-        if (x === 0n) return this.fail('Divide by 0') || null;
-        s.overflow = false;
-        if (s.sgn) {
-          const a = this.sx(y), b = this.sx(x);
-          // BigInt division truncates toward zero like C.
-          const q = a / b;
-          const rem = a % b;
-          s.overflow = op === 'DIV' && b === -1n && y === sb;
-          s.carry = rem !== 0n;
-          return (op === 'DIV' ? q : rem) & m;
-        }
-        s.carry = y % x !== 0n;
-        return op === 'DIV' ? y / x : y % x;
-      }
-      case 'AND': return y & x;
-      case 'OR': return y | x;
-      case 'XOR': return y ^ x;
-      case 'SHL':
-        if ((n = this.count(x)) === null) return null;
-        if (n === 0n) { s.carry = false; return y; }
-        s.carry = n <= ws ? ((y >> (ws - n)) & 1n) === 1n : false;
-        return n >= ws ? 0n : (y << n) & m;
-      case 'SHR':
-        if ((n = this.count(x)) === null) return null;
-        if (n === 0n) { s.carry = false; return y; }
-        if (s.sgn) { // arithmetic shift
-          const a = this.sx(y);
-          if (n >= ws) {
-            s.carry = n === ws ? ((y >> (ws - 1n)) & 1n) === 1n : a < 0n;
-            return a < 0n ? m : 0n;
-          }
-          s.carry = ((y >> (n - 1n)) & 1n) === 1n;
-          return (a >> n) & m;
-        }
-        s.carry = n <= ws ? ((y >> (n - 1n)) & 1n) === 1n : false;
-        return n >= ws ? 0n : y >> n;
-      case 'ROL':
-      case 'ROR':
-        if ((n = this.count(x)) === null) return null;
-        n %= ws;
-        if (n === 0n) return y;
-        if (op === 'ROL') {
-          r = ((y << n) | (y >> (ws - n))) & m;
-          s.carry = (r & 1n) === 1n;
-        } else {
-          r = ((y >> n) | (y << (ws - n))) & m;
-          s.carry = ((r >> (ws - 1n)) & 1n) === 1n;
-        }
-        return r;
-      default:
-        return this.fail('?') || null;
+      case 'SIN': return deg ? sinDeg(x) : Math.sin(x);
+      case 'COS': return deg ? cosDeg(x) : Math.cos(x);
+      case 'TAN': return deg ? tanDeg(x) : Math.tan(x);
+      case 'ASIN': return Math.asin(x) / (deg ? D2R : 1);
+      case 'ACOS': return Math.acos(x) / (deg ? D2R : 1);
+      case 'ATAN': return Math.atan(x) / (deg ? D2R : 1);
     }
+    return NaN;
   }
 
   exec(op) {
@@ -243,8 +321,8 @@ export class RpnCalc {
     this.msg = null;
     const s = this.s;
     const k = s.stk;
-    const m = this.mask;
     const x = k[0], y = k[1];
+    let r;
     switch (op) {
       case 'ENTER':
         this.push();
@@ -264,90 +342,89 @@ export class RpnCalc {
         k[0] = k[1]; k[1] = k[2]; k[2] = k[3];
         break;
       case 'CLX':
-        k[0] = 0n;
+        k[0] = 0;
         s.lift = false;
         return true;
       case 'CLR':
-        k[0] = k[1] = k[2] = k[3] = 0n;
-        s.carry = s.overflow = false;
+        k.fill(0);
         s.lift = false;
         return true;
       case 'LASTX':
-        if (s.lift) this.push();
-        k[0] = s.lastX;
-        break;
-      case 'NOT':
-        s.lastX = x;
-        k[0] = ~x & m;
-        break;
-      case 'NEG':
-        s.lastX = x;
-        k[0] = (-x) & m;
-        s.overflow = s.sgn && x === this.signBit;
-        break;
-      case 'POPCNT': {
-        s.lastX = x;
-        let c = 0n;
-        for (let v = x; v; v &= v - 1n) c++;
-        k[0] = c;
-        break;
-      }
-      default: { // binary: X = Y op X, stack drops
-        const r = this.binary(op, y, x);
-        if (r === null) return false;
+        return this.recall(s.lastX);
+      case 'PI':
+        return this.recall(Math.PI);
+      case 'PCT':   // Y stays: X = Y * X / 100
+      case 'DPCT':  // Y stays: X = (X - Y) / Y * 100
+        r = op === 'PCT' ? (y * x) / 100 : y === 0 ? NaN : ((x - y) / y) * 100;
+        if (!Number.isFinite(r)) return this.fail(op === 'DPCT' ? 'Divide by 0' : 'Overflow');
         s.lastX = x;
         k[0] = r;
-        k[1] = k[2];
-        k[2] = k[3];
-      }
+        break;
+      default:
+        if (op in UNARY || ['SIN', 'COS', 'TAN', 'ASIN', 'ACOS', 'ATAN'].includes(op)) {
+          r = op in UNARY ? UNARY[op](x) : this.trig(op, x);
+          if (!Number.isFinite(r)) return this.fail(ERRORS[op] || 'Overflow');
+          s.lastX = x;
+          k[0] = r === 0 ? 0 : r;
+        } else if (op in BINARY) {
+          r = BINARY[op](y, x);
+          if (!Number.isFinite(r)) return this.fail(ERRORS[op] || 'Overflow');
+          s.lastX = x;
+          k[0] = r === 0 ? 0 : r;
+          k[1] = k[2];
+          k[2] = k[3];
+        } else {
+          return this.fail('?');
+        }
     }
     s.lift = true;
     return true;
   }
 
-  // Flip bit n of X (touch on the bit view).
-  toggleBit(n) {
-    this.finishEntry();
-    this.msg = null;
-    if (n < 0 || n >= this.s.ws) return false;
-    this.s.stk[0] ^= 1n << BigInt(n);
+  // Puts a value into X like typing it (lifts the stack if enabled).
+  recall(v) {
+    if (this.s.lift) this.push();
+    this.s.stk[0] = v;
     this.s.lift = true;
     return true;
   }
 
-  setBase(b) {
-    if (!BASES.includes(b)) return this.fail('Bad base');
+  sto(n) {
     this.finishEntry();
     this.msg = null;
-    this.s.base = b;
+    if (!(n >= 0 && n < NREG)) return this.fail('Bad register');
+    this.s.reg[n] = this.s.stk[0];
+    this.s.lift = true;
     return true;
   }
 
-  cycleBase() {
-    return this.setBase(BASES[(BASES.indexOf(this.s.base) + 1) % 4]);
-  }
-
-  setWordSize(ws) {
-    if (!SIZES.includes(ws)) return this.fail('Bad size');
+  rcl(n) {
     this.finishEntry();
     this.msg = null;
-    const nm = (1n << BigInt(ws)) - 1n;
-    // Signed values keep their numeric value (sign-extend / truncate).
-    this.s.stk = this.s.stk.map((v) => this.sx(v) & nm);
-    this.s.lastX = this.sx(this.s.lastX) & nm;
-    this.s.ws = ws;
+    if (!(n >= 0 && n < NREG)) return this.fail('Bad register');
+    return this.recall(this.s.reg[n]);
+  }
+
+  setMode(mode) {
+    if (!MODES.includes(mode)) return this.fail('Bad mode');
+    this.finishEntry();
+    this.msg = null;
+    this.s.mode = mode;
     return true;
   }
 
-  cycleWordSize(dir) {
-    const i = SIZES.indexOf(this.s.ws);
-    return this.setWordSize(SIZES[(i + (dir > 0 ? 1 : 3)) % 4]);
-  }
-
-  toggleSigned() {
+  setDigits(d) {
+    if (!(d >= 0 && d <= 10)) return false;
     this.finishEntry();
     this.msg = null;
-    this.s.sgn = !this.s.sgn;
+    this.s.digits = d;
+    return true;
+  }
+
+  setDeg(deg) {
+    this.finishEntry();
+    this.msg = null;
+    this.s.deg = deg;
     return true;
   }
 
@@ -357,65 +434,44 @@ export class RpnCalc {
     return true;
   }
 
+  format(v) {
+    return formatNumber(v, this.s.mode, this.s.digits, this.s.group);
+  }
+
+  xText() {
+    return this.entering ? this.entryText() : this.format(this.s.stk[0]);
+  }
+
   snapshot() {
     return {
-      s: { ...this.s, stk: [...this.s.stk] },
-      entry: this.entry,
-      entering: this.entering,
-      entryNeg: this.entryNeg,
+      s: { ...this.s, stk: [...this.s.stk], reg: [...this.s.reg] },
+      entry: [this.entering, this.mant, this.expo, this.neg, this.expNeg],
     };
   }
 
   restore(snap) {
-    this.s = { ...snap.s, stk: [...snap.s.stk] };
-    this.entry = snap.entry;
-    this.entering = snap.entering;
-    this.entryNeg = snap.entryNeg;
+    this.s = { ...snap.s, stk: [...snap.s.stk], reg: [...snap.s.reg] };
+    [this.entering, this.mant, this.expo, this.neg, this.expNeg] = snap.entry;
     this.msg = null;
   }
 
-  // JSON-safe state (BigInt as hex strings) for localStorage.
   toJSON() {
-    return {
-      ...this.s,
-      stk: this.s.stk.map((v) => v.toString(16)),
-      lastX: this.s.lastX.toString(16),
-    };
+    return { v: 2, ...this.s };
   }
 
   loadJSON(o) {
-    try {
-      if (!SIZES.includes(o.ws) || !BASES.includes(o.base)) return false;
-      if (!Array.isArray(o.stk) || o.stk.length !== 4) return false;
-      this.reset();
-      const s = this.s;
-      s.ws = o.ws;
-      s.base = o.base;
-      for (const key of ['sgn', 'group', 'carry', 'overflow', 'lift']) s[key] = !!o[key];
-      s.stk = o.stk.map((h) => BigInt('0x' + h) & this.mask);
-      s.lastX = BigInt('0x' + o.lastX) & this.mask;
-      return true;
-    } catch {
-      this.reset();
-      return false;
-    }
-  }
-
-  format(v, base, group) {
-    v &= this.mask;
-    let neg = false;
-    if (base === 10 && this.s.sgn && (v & this.signBit)) {
-      neg = true;
-      v = (-v) & this.mask; // magnitude (INT_MIN maps to itself, correct)
-    }
-    let digits = v.toString(base).toUpperCase();
-    if (group) digits = groupDigits(digits, base);
-    return neg ? '-' + digits : digits;
-  }
-
-  xText() {
-    if (!this.entering) return this.format(this.s.stk[0], this.s.base, this.s.group);
-    const d = this.s.group ? groupDigits(this.entry, this.s.base) : this.entry;
-    return this.entryNeg ? '-' + d : d;
+    const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+    if (!o || o.v !== 2 || !Array.isArray(o.stk) || o.stk.length !== 4) return false;
+    this.reset();
+    const s = this.s;
+    s.stk = o.stk.map(num);
+    s.lastX = num(o.lastX);
+    if (Array.isArray(o.reg)) s.reg = s.reg.map((_, i) => num(o.reg[i]));
+    s.deg = o.deg !== false;
+    s.mode = MODES.includes(o.mode) ? o.mode : 'STD';
+    s.digits = Number.isInteger(o.digits) && o.digits >= 0 && o.digits <= 10 ? o.digits : 4;
+    s.group = o.group !== false;
+    s.lift = o.lift !== false;
+    return true;
   }
 }

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <meta name="theme-color" content="#0b0d12">
-  <meta name="description" content="HEX/DEC/OCT/BIN 対応の RPN プログラマ電卓">
+  <meta name="description" content="設計計算向けの RPN 関数電卓">
   <title>RPN Calc</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
@@ -15,23 +15,25 @@
 <body>
   <main id="app">
     <header>
-      <div class="seg" id="bases">
-        <button data-base="16">HEX</button>
-        <button data-base="10">DEC</button>
-        <button data-base="8">OCT</button>
-        <button data-base="2">BIN</button>
-      </div>
-      <div class="row2">
-        <div class="seg small" id="sizes">
-          <button data-ws="8">8</button>
-          <button data-ws="16">16</button>
-          <button data-ws="32">32</button>
-          <button data-ws="64">64</button>
+      <div class="row">
+        <div class="seg" id="modes">
+          <button data-mode="STD">STD</button>
+          <button data-mode="FIX">FIX</button>
+          <button data-mode="SCI">SCI</button>
+          <button data-mode="ENG">ENG</button>
         </div>
-        <button class="toggle" id="sgn"></button>
+        <div class="stepper" id="digits">
+          <button data-d="-1" aria-label="桁を減らす">−</button>
+          <span id="dval"></span>
+          <button data-d="1" aria-label="桁を増やす">+</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="seg" id="angle">
+          <button data-deg="1">DEG</button>
+          <button data-deg="0">RAD</button>
+        </div>
         <button class="toggle" id="grp">1,234</button>
-        <span class="flag" id="fc">C</span>
-        <span class="flag" id="fg">G</span>
       </div>
     </header>
 
@@ -40,9 +42,9 @@
       <div class="stk"><span class="lbl">T</span><span class="val" id="sT"></span></div>
       <div class="stk"><span class="lbl">Z</span><span class="val" id="sZ"></span></div>
       <div class="stk"><span class="lbl">Y</span><span class="val" id="sY"></span></div>
-      <div class="stk x"><span class="lbl">X</span><span class="val" id="sX"></span></div>
-      <div id="info"></div>
-      <div id="bits"></div>
+      <div class="stk x" id="xrow" title="タップでコピー"><span class="lbl">X</span><span class="val" id="sX"></span></div>
+      <div id="info"><span id="full"></span><span id="si"></span></div>
+      <div id="regs"></div>
     </section>
 
     <section id="keys"></section>

@@ -1,7 +1,7 @@
 {
-  "name": "RPN Programmer Calc",
+  "name": "RPN Calc",
   "short_name": "RPN Calc",
-  "description": "HEX/DEC/OCT/BIN 対応の RPN プログラマ電卓",
+  "description": "設計計算向けの RPN 関数電卓",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

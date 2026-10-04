@@ -1,46 +1,49 @@
-import { RpnCalc } from './core.js';
+import { RpnCalc, formatFull, formatSI } from './core.js';
 
-const STORE_KEY = 'rpn-calc-state';
-const BASE_VAR = { 16: '--hex', 10: '--dec', 8: '--oct', 2: '--bin' };
-const BASE_LETTER = { 16: 'H', 10: 'D', 8: 'O', 2: 'B' };
+const STORE_KEY = 'rpn-sci-state';
 
 const calc = new RpnCalc();
 let undoSnap = null;
+let shift = false;
+let pending = null; // 'STO' | 'RCL' while waiting for a register digit
+let note = null;    // transient non-error message
 
 const $ = (id) => document.getElementById(id);
 
 // ---------------------------------------------------------------- keypad
 
-// [label, sub-label, class, action]. Digit actions are single chars.
+// [label, class, action, shifted label, shifted action]
 const KEYS = [
-  ['AND', '&', 'bop', 'AND'], ['OR', '|', 'bop', 'OR'], ['XOR', '^', 'bop', 'XOR'],
-  ['NOT', '~', 'bop', 'NOT'], ['#1', 'popcnt', 'bop', 'POPCNT'],
-  ['≪', 'Y&lt;&lt;X', 'bop', 'SHL'], ['≫', 'Y&gt;&gt;X', 'bop', 'SHR'], ['RL', 'rotate', 'bop', 'ROL'],
-  ['RR', 'rotate', 'bop', 'ROR'], ['MOD', '%', 'op word', 'MOD'],
-  ['x⇄y', 'swap', 'stack', 'SWAP'], ['R↓', 'roll', 'stack', 'RDN'], ['R↑', 'roll', 'stack', 'RUP'],
-  ['LSTx', 'last x', 'stack', 'LASTX'], ['±', 'neg', 'op', 'CHS'],
-  ['D', '', 'num hexd', 'D'], ['E', '', 'num hexd', 'E'], ['F', '', 'num hexd', 'F'],
-  ['÷', '', 'op', 'DIV'], ['⌫', '', 'edit', 'BS'],
-  ['A', '', 'num hexd', 'A'], ['B', '', 'num hexd', 'B'], ['C', '', 'num hexd', 'C'],
-  ['×', '', 'op', 'MUL'], ['CLX', 'clear x', 'edit', 'CLX'],
-  ['7', '', 'num', '7'], ['8', '', 'num', '8'], ['9', '', 'num', '9'],
-  ['−', '', 'op', 'SUB'], ['CLR', 'all', 'danger', 'CLR'],
-  ['4', '', 'num', '4'], ['5', '', 'num', '5'], ['6', '', 'num', '6'],
-  ['+', '', 'op', 'ADD'], ['↶', 'undo', 'edit', 'UNDO'],
-  ['1', '', 'num', '1'], ['2', '', 'num', '2'], ['3', '', 'num', '3'],
-  ['ENTER', '', 'enter', 'ENTER'],
-  ['0', '', 'num', '0'],
+  ['SHIFT', 'shiftkey', 'SHIFT'], ['x⇄y', 'stack', 'SWAP'], ['R↓', 'stack', 'RDN', 'R↑', 'RUP'],
+  ['LSTx', 'stack', 'LASTX'], ['↶', 'edit', 'UNDO'],
+  ['sin', 'fn', 'SIN', 'sin⁻¹', 'ASIN'], ['cos', 'fn', 'COS', 'cos⁻¹', 'ACOS'],
+  ['tan', 'fn', 'TAN', 'tan⁻¹', 'ATAN'], ['π', 'fn', 'PI'], ['1/x', 'fn', 'INV'],
+  ['x²', 'fn', 'SQ'], ['√x', 'fn', 'SQRT'], ['yˣ', 'fn', 'POW'], ['ˣ√y', 'fn', 'ROOT'],
+  ['EEX', 'edit', 'EEX'],
+  ['log', 'fn', 'LOG', '10ˣ', 'EXP10'], ['ln', 'fn', 'LN', 'eˣ', 'EXP'],
+  ['STO', 'mem', 'STO'], ['RCL', 'mem', 'RCL'], ['%', 'fn', 'PCT', 'Δ%', 'DPCT'],
+  ['7', 'num', '7'], ['8', 'num', '8'], ['9', 'num', '9'], ['÷', 'op', 'DIV'], ['CLR', 'danger', 'CLR'],
+  ['4', 'num', '4'], ['5', 'num', '5'], ['6', 'num', '6'], ['×', 'op', 'MUL'], ['CLX', 'edit', 'CLX'],
+  ['1', 'num', '1'], ['2', 'num', '2'], ['3', 'num', '3'], ['−', 'op', 'SUB'], ['⌫', 'edit', 'BS'],
+  ['0', 'num', '0'], ['.', 'num', '.'], ['±', 'edit', 'CHS'], ['+', 'op', 'ADD'], ['ENTER', 'enter', 'ENTER'],
 ];
 
 function buildKeys() {
   const pad = $('keys');
-  for (const [label, sub, cls, action] of KEYS) {
+  for (const [label, cls, action, alt, altAction] of KEYS) {
     const b = document.createElement('button');
-    b.className = 'k ' + cls;
+    b.className = 'k ' + cls + (alt ? ' has-alt' : '');
     b.dataset.act = action;
-    b.innerHTML = label + (sub ? `<small>${sub}</small>` : '');
-    if (action === 'ENTER') b.style.cssText = 'grid-column: 4 / 6; grid-row: 8 / 10;';
-    if (action === '0') b.style.cssText = 'grid-column: 1 / 4;';
+    if (alt) {
+      b.dataset.alt = altAction;
+      b.innerHTML = `<sup class="alt"></sup><span class="main"></span>`;
+      b.querySelector('.alt').textContent = alt;
+      b.dataset.label = label;
+      b.dataset.altLabel = alt;
+    } else {
+      b.innerHTML = '<span class="main"></span>';
+    }
+    b.querySelector('.main').textContent = label;
     pad.appendChild(b);
   }
   // pointerdown reacts instantly on touch; click would wait for release.
@@ -50,17 +53,18 @@ function buildKeys() {
     e.preventDefault();
     b.classList.add('press');
     setTimeout(() => b.classList.remove('press'), 90);
-    run(b.dataset.act);
+    press(shift && b.dataset.alt ? b.dataset.alt : b.dataset.act);
   });
 }
 
 // ---------------------------------------------------------------- actions
 
 function perform(action) {
-  if (/^[0-9A-F]$/.test(action)) return calc.digit(action);
   switch (action) {
     case 'BS': return calc.backspace();
     case 'CHS': return calc.chs();
+    case 'EEX': return calc.eex();
+    case '.': return calc.point();
     case 'UNDO': {
       if (!undoSnap) return false;
       const cur = calc.snapshot();
@@ -68,11 +72,44 @@ function perform(action) {
       undoSnap = cur; // pressing again = redo
       return 'undo';
     }
-    default: return calc.exec(action);
+    default:
+      if (/^[0-9]$/.test(action)) return calc.digit(action);
+      return calc.exec(action);
   }
 }
 
-// Runs one action with undo bookkeeping, feedback and redraw.
+// One key press from the keypad (handles SHIFT and STO/RCL prefixes).
+function press(action) {
+  note = null;
+  if (pending) {
+    const which = pending;
+    pending = null;
+    if (/^[0-9]$/.test(action)) {
+      const n = +action;
+      act(() => (which === 'STO' ? calc.sto(n) : calc.rcl(n)));
+      if (which === 'STO') note = `R${n} に保存`;
+    }
+    render(); // any other key just cancels
+    return;
+  }
+  if (action === 'SHIFT') {
+    shift = !shift;
+    vibrate(8);
+    render();
+    return;
+  }
+  shift = false;
+  if (action === 'STO' || action === 'RCL') {
+    pending = action;
+    note = `${action} → 0〜9`;
+    vibrate(8);
+    render();
+    return;
+  }
+  act(() => perform(action));
+}
+
+// Runs one calculator action with undo bookkeeping, feedback and redraw.
 function act(fn) {
   const before = calc.snapshot();
   const r = fn();
@@ -83,8 +120,6 @@ function act(fn) {
   render();
 }
 
-const run = (action) => act(() => perform(action));
-
 function vibrate(p) {
   try { navigator.vibrate?.(p); } catch { /* not supported */ }
 }
@@ -93,96 +128,69 @@ function vibrate(p) {
 
 function render() {
   const s = calc.s;
-  const root = document.documentElement;
-  root.style.setProperty('--accent', `var(${BASE_VAR[s.base]})`);
-
-  for (const b of $('bases').children) b.classList.toggle('on', +b.dataset.base === s.base);
-  for (const b of $('sizes').children) b.classList.toggle('on', +b.dataset.ws === s.ws);
-  $('sgn').textContent = s.sgn ? 'Signed' : 'Unsigned';
-  $('sgn').classList.toggle('on', s.sgn);
+  for (const b of $('modes').children) b.classList.toggle('on', b.dataset.mode === s.mode);
+  for (const b of $('angle').children) b.classList.toggle('on', (b.dataset.deg === '1') === s.deg);
+  $('dval').textContent = s.digits;
+  $('digits').classList.toggle('off', s.mode === 'STD');
   $('grp').classList.toggle('on', s.group);
-  $('fc').classList.toggle('on', s.carry);
-  $('fg').classList.toggle('on', s.overflow);
-  $('msg').textContent = calc.msg ?? '';
 
-  const fmt = (v) => calc.format(v, s.base, s.group);
-  setFit($('sT'), fmt(s.stk[3]));
-  setFit($('sZ'), fmt(s.stk[2]));
-  setFit($('sY'), fmt(s.stk[1]));
+  const msg = $('msg');
+  msg.textContent = calc.msg ?? note ?? '';
+  msg.classList.toggle('note', !calc.msg && !!note);
+
+  setFit($('sT'), calc.format(s.stk[3]));
+  setFit($('sZ'), calc.format(s.stk[2]));
+  setFit($('sY'), calc.format(s.stk[1]));
   const x = $('sX');
-  x.textContent = calc.xText();
   x.classList.toggle('entering', calc.entering);
-  fitX(x);
+  setFit(x, calc.xText(), 14);
 
-  // X in the other bases (BIN is shown as the bit grid).
-  const info = $('info');
-  info.replaceChildren();
-  for (const b of [16, 10, 8]) {
-    if (b === s.base) continue;
-    const row = document.createElement('div');
-    row.innerHTML = `<b style="color:var(${BASE_VAR[b]})">${BASE_LETTER[b]}</b><span></span>`;
-    row.lastChild.textContent = calc.format(s.stk[0], b, true);
-    info.appendChild(row);
-  }
-  renderBits();
+  // Full precision when the display rounds, plus SI prefix form.
+  const xv = s.stk[0];
+  const full = formatFull(xv);
+  const shown = calc.format(xv).replace(/,/g, '');
+  $('full').textContent = !calc.entering && full !== shown ? '≈ ' + full : '';
+  const si = formatSI(xv);
+  $('si').textContent = si && /[a-zµ]/i.test(si) ? si : '';
 
-  // Digits that the current base cannot take.
-  for (const k of document.querySelectorAll('.k.num')) {
-    const d = parseInt(k.dataset.act, 16);
-    k.classList.toggle('off', d >= s.base);
+  const regs = $('regs');
+  regs.replaceChildren();
+  s.reg.forEach((v, i) => {
+    if (v === 0) return;
+    const r = document.createElement('span');
+    r.innerHTML = `<b>R${i}</b>`;
+    r.append(calc.format(v));
+    regs.appendChild(r);
+  });
+
+  const pad = $('keys');
+  pad.classList.toggle('shifted', shift);
+  pad.classList.toggle('pending', !!pending);
+  for (const k of pad.querySelectorAll('.has-alt')) {
+    k.querySelector('.main').textContent = shift ? k.dataset.altLabel : k.dataset.label;
   }
 }
 
-// Shrink single-line stack values until they fit.
-function setFit(el, text) {
+// Shrink single-line values until they fit.
+function setFit(el, text, min = 9) {
   el.textContent = text;
   el.style.fontSize = '';
   let size = parseFloat(getComputedStyle(el).fontSize);
-  while (el.scrollWidth > el.clientWidth && size > 9) {
+  while (el.scrollWidth > el.clientWidth && size > min) {
     size -= 1;
     el.style.fontSize = size + 'px';
   }
 }
 
-// X may wrap, but prefer one line down to a readable size.
-function fitX(el) {
-  el.style.fontSize = '';
-  el.style.whiteSpace = 'nowrap';
-  let size = parseFloat(getComputedStyle(el).fontSize);
-  while (el.scrollWidth > el.clientWidth && size > 15) {
-    size -= 1;
-    el.style.fontSize = size + 'px';
+async function copyX() {
+  try {
+    await navigator.clipboard.writeText(formatFull(calc.s.stk[0]));
+    note = 'コピーしました';
+  } catch {
+    note = 'コピーできません';
   }
-  el.style.whiteSpace = '';
-}
-
-function renderBits() {
-  const s = calc.s;
-  const box = $('bits');
-  const x = s.stk[0];
-  const perRow = Math.min(16, s.ws);
-  box.replaceChildren();
-  for (let top = s.ws - 1; top >= 0; top -= perRow) {
-    const row = document.createElement('div');
-    row.className = 'bitrow';
-    row.innerHTML = `<span class="idx">${top}</span>`;
-    for (let n = 0; n < perRow / 4; n++) {
-      const nib = document.createElement('div');
-      nib.className = 'nib';
-      for (let i = 0; i < 4; i++) {
-        const bit = top - n * 4 - i;
-        const on = ((x >> BigInt(bit)) & 1n) === 1n;
-        const b = document.createElement('button');
-        b.className = 'bit' + (on ? ' one' : '');
-        b.dataset.bit = bit;
-        b.textContent = on ? '1' : '0';
-        b.title = 'bit ' + bit;
-        nib.appendChild(b);
-      }
-      row.appendChild(nib);
-    }
-    box.appendChild(row);
-  }
+  vibrate(8);
+  render();
 }
 
 // ---------------------------------------------------------------- persistence
@@ -200,38 +208,26 @@ function load() {
 
 // ---------------------------------------------------------------- physical keyboard
 
-const CHAR_ACTIONS = {
-  ' ': 'ENTER', '=': 'ADD', '+': 'ADD', '-': 'SUB', 'x': 'MUL', '*': 'MUL', '/': 'DIV',
-  '%': 'MOD', '&': 'AND', '|': 'OR', '^': 'XOR', '~': 'NOT', '<': 'SHL', '>': 'SHR',
-  '[': 'ROL', ']': 'ROR', 'n': 'CHS', 'p': 'POPCNT', 's': 'SWAP', 'r': 'RDN', 'R': 'RUP',
-  'l': 'LASTX', '`': 'CLX', 'Z': 'CLR',
+const KEYMAP = {
+  Enter: 'ENTER', ' ': 'ENTER', Backspace: 'BS', Escape: 'CLX', Delete: 'CLR',
+  '+': 'ADD', '-': 'SUB', '*': 'MUL', '/': 'DIV', '^': 'POW', '%': 'PCT',
+  '.': '.', ',': '.', e: 'EEX', E: 'EEX', n: 'CHS', s: 'SWAP', r: 'RDN', R: 'RUP',
+  l: 'LASTX', q: 'SQRT', i: 'INV', p: 'PI', ArrowUp: 'RUP', ArrowDown: 'RDN',
 };
 
 function onKey(e) {
   if (e.altKey || e.metaKey) return;
-  const k = e.key;
-  let fn = null;
+  let action = null;
   if (e.ctrlKey) {
-    if (k === 'z' || k === 'Z') fn = () => perform('UNDO');
-  } else if (/^[0-9a-fA-F]$/.test(k)) {
-    fn = () => calc.digit(k);
-  } else if (k === 'Enter') fn = () => calc.exec('ENTER');
-  else if (k === 'Backspace') fn = () => calc.backspace();
-  else if (k === 'Escape') fn = () => calc.exec('CLX');
-  else if (k === 'Delete') fn = () => calc.exec('CLR');
-  else if (k === 'Tab') fn = () => calc.cycleBase();
-  else if (k === 'ArrowUp') fn = () => calc.exec('RUP');
-  else if (k === 'ArrowDown') fn = () => calc.exec('RDN');
-  else if (k === 'h') fn = () => calc.setBase(16);
-  else if (k === 'o') fn = () => calc.setBase(8);
-  else if (k === 'w') fn = () => calc.cycleWordSize(+1);
-  else if (k === 'W') fn = () => calc.cycleWordSize(-1);
-  else if (k === 'u') fn = () => calc.toggleSigned();
-  else if (k === 'g') fn = () => calc.toggleGroup();
-  else if (CHAR_ACTIONS[k]) fn = () => perform(CHAR_ACTIONS[k]);
-  if (!fn) return;
+    if (e.key === 'z' || e.key === 'Z') action = 'UNDO';
+  } else if (/^[0-9]$/.test(e.key)) {
+    action = e.key;
+  } else {
+    action = KEYMAP[e.key] ?? null;
+  }
+  if (!action) return;
   e.preventDefault();
-  act(fn);
+  press(action);
 }
 
 // ---------------------------------------------------------------- wiring
@@ -239,20 +235,20 @@ function onKey(e) {
 function init() {
   load();
   buildKeys();
-  $('bases').addEventListener('click', (e) => {
+  $('modes').addEventListener('click', (e) => {
     const b = e.target.closest('button');
-    if (b) act(() => calc.setBase(+b.dataset.base));
+    if (b) act(() => calc.setMode(b.dataset.mode));
   });
-  $('sizes').addEventListener('click', (e) => {
+  $('angle').addEventListener('click', (e) => {
     const b = e.target.closest('button');
-    if (b) act(() => calc.setWordSize(+b.dataset.ws));
+    if (b) act(() => calc.setDeg(b.dataset.deg === '1'));
   });
-  $('sgn').addEventListener('click', () => act(() => calc.toggleSigned()));
+  $('digits').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b && calc.s.mode !== 'STD') act(() => calc.setDigits(calc.s.digits + +b.dataset.d));
+  });
   $('grp').addEventListener('click', () => act(() => calc.toggleGroup()));
-  $('bits').addEventListener('click', (e) => {
-    const b = e.target.closest('.bit');
-    if (b) act(() => calc.toggleBit(+b.dataset.bit));
-  });
+  $('xrow').addEventListener('click', copyX);
   document.addEventListener('keydown', onKey);
   window.addEventListener('resize', render);
   render();
