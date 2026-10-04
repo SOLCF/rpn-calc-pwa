@@ -5,6 +5,7 @@ import { VERSION, RELEASED, REPO_URL } from './version.js';
 const STORE_KEY = 'rpn-sci-state';
 const HIST_KEY = 'rpn-sci-history';
 const PREFS_KEY = 'rpn-prefs';
+const SEEN_KEY = 'rpn-seen-version';
 
 const calc = new RpnCalc();
 const hist = new History(100);
@@ -360,7 +361,8 @@ async function checkUpdate() {
   const status = $('upd-status');
   status.textContent = '確認中…';
   try {
-    const res = await fetch('version.js?t=' + Date.now(), { cache: 'no-store' });
+    // Give up after 8 s so a weak signal does not leave it spinning.
+    const res = await fetch('version.js?t=' + Date.now(), { cache: 'no-store', signal: AbortSignal.timeout(8000) });
     const latest = /VERSION = '([^']+)'/.exec(await res.text())?.[1];
     if (!latest) throw new Error('no version');
     if (latest === VERSION) {
@@ -368,12 +370,14 @@ async function checkUpdate() {
       return;
     }
     status.textContent = `v${latest} に更新します…`;
+    // Drop the cache-first worker and its files so the reload comes from the
+    // network; the page then registers the new worker, which caches v-latest.
     const reg = await navigator.serviceWorker?.getRegistration();
-    await reg?.update();
+    await reg?.unregister();
     for (const k of await caches.keys()) await caches.delete(k);
     location.reload();
   } catch {
-    status.textContent = 'オフラインのため確認できません';
+    status.textContent = '通信できないため確認できません';
   }
 }
 
@@ -488,6 +492,13 @@ function init() {
   $('released').textContent = RELEASED + ' 公開';
   $('upd').addEventListener('click', checkUpdate);
   $('repo').href = REPO_URL;
+
+  // Updates install in the background; say so once on the first launch after.
+  try {
+    const seen = localStorage.getItem(SEEN_KEY);
+    if (seen && seen !== VERSION) note = `v${VERSION} に更新しました`;
+    localStorage.setItem(SEEN_KEY, VERSION);
+  } catch { /* storage unavailable */ }
 
   document.addEventListener('keydown', onKey);
   window.addEventListener('resize', render);
