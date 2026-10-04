@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0b0d12">
+  <meta name="description" content="HEX/DEC/OCT/BIN 対応の RPN プログラマ電卓">
+  <title>RPN Calc</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <main id="app">
+    <header>
+      <div class="seg" id="bases">
+        <button data-base="16">HEX</button>
+        <button data-base="10">DEC</button>
+        <button data-base="8">OCT</button>
+        <button data-base="2">BIN</button>
+      </div>
+      <div class="row2">
+        <div class="seg small" id="sizes">
+          <button data-ws="8">8</button>
+          <button data-ws="16">16</button>
+          <button data-ws="32">32</button>
+          <button data-ws="64">64</button>
+        </div>
+        <button class="toggle" id="sgn"></button>
+        <button class="toggle" id="grp">1,234</button>
+        <span class="flag" id="fc">C</span>
+        <span class="flag" id="fg">G</span>
+      </div>
+    </header>
+
+    <section id="display">
+      <div class="msg" id="msg"></div>
+      <div class="stk"><span class="lbl">T</span><span class="val" id="sT"></span></div>
+      <div class="stk"><span class="lbl">Z</span><span class="val" id="sZ"></span></div>
+      <div class="stk"><span class="lbl">Y</span><span class="val" id="sY"></span></div>
+      <div class="stk x"><span class="lbl">X</span><span class="val" id="sX"></span></div>
+      <div id="info"></div>
+      <div id="bits"></div>
+    </section>
+
+    <section id="keys"></section>
+  </main>
+</body>
+</html>

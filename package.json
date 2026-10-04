@@ -1,0 +1,8 @@
+{
+  "name": "rpn-pwa",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test/core.test.mjs"
+  }
+}
