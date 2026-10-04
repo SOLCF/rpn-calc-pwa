@@ -1,5 +1,5 @@
 // Offline cache for the app shell.
-const VERSION = 'rpn-v4';
+const VERSION = 'rpn-v5';
 const FILES = [
   './',
   'index.html',

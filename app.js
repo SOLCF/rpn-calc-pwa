@@ -16,15 +16,15 @@ const DR_NOTE = { 2: '×2.0（半径→直径）', 0.5: '×0.5（直径→半径
 // [label, class, action, shifted label, shifted action, hint]
 const KEYS = [
   ['SHIFT', 'shiftkey', 'SHIFT'], ['x⇄y', 'stack', 'SWAP'], ['R↓', 'stack', 'RDN', 'R↑', 'RUP'],
-  ['LSTx', 'stack', 'LASTX'], ['↶', 'edit', 'UNDO'],
+  ['LSTx', 'stack', 'LASTX'], ['EEX', 'edit', 'EEX'],
   ['sin', 'fn', 'SIN', 'sin⁻¹', 'ASIN'], ['cos', 'fn', 'COS', 'cos⁻¹', 'ACOS'],
-  ['tan', 'fn', 'TAN', 'tan⁻¹', 'ATAN'], ['π', 'fn', 'PI'], ['1/x', 'fn', 'INV'],
+  ['tan', 'fn', 'TAN', 'tan⁻¹', 'ATAN'], ['π', 'fn', 'PI'], ['%', 'fn', 'PCT', 'Δ%', 'DPCT'],
   ['x²', 'fn', 'SQ'], ['√x', 'fn', 'SQRT'], ['yˣ', 'fn', 'POW'], ['ˣ√y', 'fn', 'ROOT'],
-  ['EEX', 'edit', 'EEX'],
+  ['1/x', 'fn', 'INV'],
   ['log', 'fn', 'LOG', '10ˣ', 'EXP10'], ['ln', 'fn', 'LN', 'eˣ', 'EXP'],
-  ['D⇄R', 'mem', 'DR'], ['弧長', 'mem arc', 'ARC', null, null, 'Y⌀ X°'], ['%', 'fn', 'PCT', 'Δ%', 'DPCT'],
-  ['7', 'num', '7'], ['8', 'num', '8'], ['9', 'num', '9'], ['÷', 'op', 'DIV'], ['CLR', 'danger', 'CLR'],
-  ['4', 'num', '4'], ['5', 'num', '5'], ['6', 'num', '6'], ['×', 'op', 'MUL'], ['CLX', 'edit', 'CLX'],
+  ['D⇄R', 'mem', 'DR'], ['弧長', 'mem arc', 'ARC', null, null, 'Y⌀ X°'], ['CLR', 'danger', 'CLR'],
+  ['7', 'num', '7'], ['8', 'num', '8'], ['9', 'num', '9'], ['÷', 'op', 'DIV'], ['CLX', 'edit', 'CLX'],
+  ['4', 'num', '4'], ['5', 'num', '5'], ['6', 'num', '6'], ['×', 'op', 'MUL'], ['↶', 'edit', 'UNDO'],
   ['1', 'num', '1'], ['2', 'num', '2'], ['3', 'num', '3'], ['−', 'op', 'SUB'], ['⌫', 'edit', 'BS'],
   ['0', 'num', '0'], ['.', 'num', '.'], ['±', 'edit', 'CHS'], ['+', 'op', 'ADD'], ['ENTER', 'enter', 'ENTER'],
 ];
