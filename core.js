@@ -465,6 +465,13 @@ export class RpnCalc {
     };
   }
 
+  // Restores stack and entry only; display/angle settings stay as they are.
+  restoreValues(snap) {
+    const keep = { mode: this.s.mode, digits: this.s.digits, group: this.s.group, deg: this.s.deg };
+    this.restore(snap);
+    Object.assign(this.s, keep);
+  }
+
   restore(snap) {
     this.s = { ...snap.s, stk: [...snap.s.stk] };
     this.dr = null;

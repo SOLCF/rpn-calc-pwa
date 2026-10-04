@@ -1,5 +1,8 @@
 // Run: node test/core.test.mjs
+import { readFileSync } from 'node:fs';
 import { RpnCalc, formatNumber, formatSI, formatFull } from '../core.js';
+import { History } from '../history.js';
+import { VERSION } from '../version.js';
 
 let fails = 0;
 function check(cond, label) {
@@ -165,6 +168,42 @@ const X = (c) => c.s.stk[0];
   eq(d.s.stk[0], 1.5e-3, 'json x');
   eq(d.s.mode, 'ENG', 'json mode'); eq(d.s.deg, false, 'json rad');
   check(!d.loadJSON({ stk: ['ff', '0', '0', '0'], ws: 32 }), 'old programmer state rejected');
+}
+
+{ // history: undo/redo/jump across committed steps
+  const c = new RpnCalc();
+  const h = new History(100);
+  h.clear(c.snapshot());
+  // mimic app.js: entry edits touch, operations record
+  const op = (name) => { const b = c.snapshot(); c.exec(name); h.record(b, c.snapshot(), name, ''); };
+  const typ = (str) => { type(c, str); h.touch(); };
+  typ('3'); op('ENTER'); typ('4'); op('ADD');   // 7
+  typ('2'); op('MUL');                          // 14
+  eq(X(c), 14, 'setup');
+  check(h.canUndo() && !h.canRedo(), 'can undo only');
+  c.restoreValues(h.undo()); eq(c.xText(), '2', 'undo MUL shows typed 2'); check(c.entering, 'still entering');
+  c.restoreValues(h.undo()); eq(c.xText(), '4', 'undo ADD shows typed 4');
+  c.restoreValues(h.redo()); eq(X(c), 7, 'redo ADD');
+  c.restoreValues(h.redo()); eq(X(c), 14, 'redo MUL');
+  check(!h.redo(), 'nothing to redo');
+  c.restoreValues(h.jump(1)); eq(X(c), 3, 'jump after ENTER'); eq(c.s.stk[1], 3, 'jump stack');
+  c.restoreValues(h.jump(0)); check(c.entering && c.xText() === '3', 'jump to start = before first op');
+  c.restoreValues(h.jump(3));
+  typ('9'); c.restoreValues(h.undo()); eq(X(c), 14, 'undo discards typing first');
+  c.restoreValues(h.jump(1)); typ('5'); op('SUB'); // new branch drops redo tail
+  eq(h.steps.length, 2, 'redo tail dropped'); eq(X(c), -2, '3-5');
+  c.setMode('FIX'); c.restoreValues(h.undo()); eq(c.s.mode, 'FIX', 'undo keeps settings');
+  const h2 = new History(100);
+  check(h2.loadJSON(JSON.parse(JSON.stringify(h.toJSON())), c.snapshot()) && h2.steps.length === 2 && h2.i === 1, 'history json');
+  const small = new History(3); small.clear(c.snapshot());
+  for (let n = 0; n < 5; n++) small.record(c.snapshot(), c.snapshot(), 'x' + n, '');
+  eq(small.steps.length, 3, 'limit'); eq(small.steps[0].expr, 'x2', 'oldest dropped');
+  const a = new History(); a.clear(c.snapshot()); a.record(c.snapshot(), c.snapshot(), 'DR', '1');
+  a.amendLast(c.snapshot(), 'DR', '2'); eq(a.steps.length, 1, 'amend keeps one step'); eq(a.steps[0].result, '2', 'amended');
+}
+{ // version in sw.js matches version.js
+  const sw = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
+  check(sw.includes(`'rpn-${VERSION}'`), `sw.js cache name must be rpn-${VERSION}`);
 }
 
 console.log(fails ? `${fails} FAILED` : 'all passed');

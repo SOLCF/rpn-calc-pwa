@@ -27,18 +27,17 @@
           <span id="dval"></span>
           <button data-d="1" aria-label="桁を増やす">+</button>
         </div>
-      </div>
-      <div class="row">
-        <div class="seg" id="angle">
-          <button data-deg="1">DEG</button>
-          <button data-deg="0">RAD</button>
-        </div>
-        <button class="toggle" id="grp">1,234</button>
+        <button class="gear" id="open-menu" aria-label="履歴・設定">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.47.47 0 0 0-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87a.47.47 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58ZM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2Z"/>
+          </svg>
+        </button>
       </div>
     </header>
 
     <section id="display">
       <div class="msg" id="msg"></div>
+      <div class="badge" id="rad">RAD</div>
       <div class="stk"><span class="lbl">T</span><span class="val" id="sT"></span></div>
       <div class="stk"><span class="lbl">Z</span><span class="val" id="sZ"></span></div>
       <div class="stk"><span class="lbl">Y</span><span class="val" id="sY"></span></div>
@@ -48,5 +47,63 @@
 
     <section id="keys"></section>
   </main>
+
+  <section id="sheet" hidden>
+    <div class="sheet-head">
+      <button class="back" id="close-menu" aria-label="閉じる">←</button>
+      <nav class="tabs" id="tabs">
+        <button data-tab="tape">履歴</button>
+        <button data-tab="settings">設定</button>
+        <button data-tab="help">キー説明</button>
+      </nav>
+    </div>
+
+    <div class="tab" id="tab-tape">
+      <div class="tape-tools">
+        <button id="t-undo">↶ Undo</button>
+        <button id="t-redo">↷ Redo</button>
+        <button id="t-clear" class="danger">履歴を消去</button>
+      </div>
+      <p class="hint">行をタップすると、その計算の直後に戻ります（最新 100 件を保存）。</p>
+      <ol id="tape"></ol>
+    </div>
+
+    <div class="tab" id="tab-settings">
+      <h3>計算</h3>
+      <div class="setting">
+        <div><b>角度の単位</b><small>sin・cos・tan とその逆関数に適用。弧長キーは常に度。</small></div>
+        <div class="seg" id="angle">
+          <button data-deg="1">DEG</button>
+          <button data-deg="0">RAD</button>
+        </div>
+      </div>
+      <div class="setting">
+        <div><b>桁区切り</b><small>1,234,567 のようにカンマを入れる</small></div>
+        <button class="switch" id="grp" role="switch"></button>
+      </div>
+      <div class="setting">
+        <div><b>振動</b><small>キーを押したときの振動</small></div>
+        <button class="switch" id="vib" role="switch"></button>
+      </div>
+
+      <h3>アプリ情報</h3>
+      <div class="setting">
+        <div><b>バージョン</b><small id="released"></small></div>
+        <span class="ver" id="ver"></span>
+      </div>
+      <div class="setting">
+        <div><b>最新版に更新</b><small id="upd-status">新しいバージョンがあれば読み込み直します</small></div>
+        <button class="pill" id="upd">更新</button>
+      </div>
+      <div class="setting">
+        <div><b>GitHub</b><small>ソースコード・更新内容</small></div>
+        <a class="pill" id="repo" target="_blank" rel="noopener">開く</a>
+      </div>
+    </div>
+
+    <div class="tab" id="tab-help">
+      <dl id="help"></dl>
+    </div>
+  </section>
 </body>
 </html>

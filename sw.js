@@ -1,11 +1,13 @@
 // Offline cache for the app shell.
-const VERSION = 'rpn-v5';
+const VERSION = 'rpn-2.3.0'; // keep in sync with version.js
 const FILES = [
   './',
   'index.html',
   'style.css',
   'app.js',
   'core.js',
+  'history.js',
+  'version.js',
   'manifest.webmanifest',
   'icons/icon-192.png',
   'icons/icon-512.png',
