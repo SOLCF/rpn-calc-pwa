@@ -480,7 +480,10 @@ function init() {
   });
   $('grp').addEventListener('click', () => onSetting(() => calc.toggleGroup()));
   $('vib').addEventListener('click', () => onSetting(() => { prefs.vibrate = !prefs.vibrate; }));
-  $('ver').textContent = 'v' + VERSION;
+  // Anything not served from GitHub Pages (localhost, the Tailscale preview) is a dev build.
+  const dev = !location.hostname.endsWith('github.io');
+  $('ver').textContent = 'v' + VERSION + (dev ? ' 開発版' : '');
+  if (dev) document.title += ' (開発版)';
   $('released').textContent = RELEASED + ' 公開';
   $('upd').addEventListener('click', checkUpdate);
   $('repo').href = REPO_URL;
