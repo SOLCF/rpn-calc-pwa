@@ -69,10 +69,12 @@ export function formatNumber(v, mode = 'STD', digits = 4, group = true) {
       const [m, e3] = engParts(v, digits + 1);
       return e3 === 0 ? m : `${m}E${e3}`;
     }
-    default: { // STD: 12 significant digits, trailing zeros removed
+    default: { // STD: 12 significant digits, trailing zeros removed.
+      // Small numbers stay decimal (0.00000001) down to 1E-15; below that
+      // (rounding residue) or from 1E12 up (beyond 12 digits) use E notation.
       if (v === 0) return '0';
       const e = exponentOf(Number(v.toPrecision(12)));
-      if (e >= 12 || e < -6) {
+      if (e >= 12 || e < -15) {
         const [m, ex] = v.toExponential(11).split('e');
         return `${stripZeros(m)}E${parseInt(ex, 10)}`;
       }
@@ -95,7 +97,7 @@ export function formatFull(v) {
   if (v === 0) return '0';
   const p = Number(v.toPrecision(15));
   const e = exponentOf(p);
-  if (e >= 15 || e < -6) {
+  if (e >= 15 || e < -15) {
     const [m, ex] = v.toExponential(14).split('e');
     return `${stripZeros(m)}E${parseInt(ex, 10)}`;
   }
