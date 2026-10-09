@@ -138,37 +138,51 @@ function tanDeg(d) {
 
 // ---------------------------------------------------------------- calculator
 
-const UNARY = {
-  INV: (x) => 1 / x,
-  SQ: (x) => x * x,
-  SQRT: (x) => Math.sqrt(x),
-  LOG: (x) => (x > 0 ? Math.log10(x) : NaN),
-  LN: (x) => (x > 0 ? Math.log(x) : NaN),
-  EXP10: (x) => 10 ** x,
-  EXP: (x) => Math.exp(x),
-  NEG: (x) => -x,
-};
+// Math operations, one entry each:
+//   arity 1: X = fn(X, deg)                (deg: true in DEG mode)
+//   arity 2: X = fn(Y, X), the stack drops (keepY: Y stays, as with HP's %)
+//   err: message when the result is not a finite number (default 'Overflow').
+const MATH = {
+  NEG: { arity: 1, fn: (x) => -x },
+  INV: { arity: 1, fn: (x) => 1 / x, err: 'Divide by 0' },
+  SQ: { arity: 1, fn: (x) => x * x },
+  SQRT: { arity: 1, fn: (x) => Math.sqrt(x), err: 'Invalid input' },
+  LOG: { arity: 1, fn: (x) => (x > 0 ? Math.log10(x) : NaN), err: 'Invalid input' },
+  LN: { arity: 1, fn: (x) => (x > 0 ? Math.log(x) : NaN), err: 'Invalid input' },
+  EXP10: { arity: 1, fn: (x) => 10 ** x },
+  EXP: { arity: 1, fn: (x) => Math.exp(x) },
+  SIN: { arity: 1, fn: (x, deg) => (deg ? sinDeg(x) : Math.sin(x)) },
+  COS: { arity: 1, fn: (x, deg) => (deg ? cosDeg(x) : Math.cos(x)) },
+  TAN: { arity: 1, fn: (x, deg) => (deg ? tanDeg(x) : Math.tan(x)), err: 'Undefined' },
+  ASIN: { arity: 1, fn: (x, deg) => Math.asin(x) / (deg ? D2R : 1), err: 'Invalid input' },
+  ACOS: { arity: 1, fn: (x, deg) => Math.acos(x) / (deg ? D2R : 1), err: 'Invalid input' },
+  ATAN: { arity: 1, fn: (x, deg) => Math.atan(x) / (deg ? D2R : 1) },
 
-const BINARY = {
-  ADD: (y, x) => y + x,
-  SUB: (y, x) => y - x,
-  MUL: (y, x) => y * x,
-  DIV: (y, x) => (x === 0 ? NaN : y / x),
-  POW: (y, x) => (y === 0 && x < 0 ? NaN : y ** x),
-  ARC: (y, x) => (Math.PI * y * x) / 360, // arc length: Y = diameter, X = degrees
-  ARCANG: (y, x) => (y === 0 ? NaN : (360 * x) / (Math.PI * y)), // angle [deg]: Y = diameter, X = arc length
-  ROOT: (y, x) => { // x-th root of y; odd roots of negatives are real
-    if (x === 0) return NaN;
-    if (y < 0 && Number.isInteger(x) && Math.abs(x) % 2 === 1) return -((-y) ** (1 / x));
-    return y ** (1 / x);
+  ADD: { arity: 2, fn: (y, x) => y + x },
+  SUB: { arity: 2, fn: (y, x) => y - x },
+  MUL: { arity: 2, fn: (y, x) => y * x },
+  DIV: { arity: 2, fn: (y, x) => (x === 0 ? NaN : y / x), err: 'Divide by 0' },
+  POW: { arity: 2, fn: (y, x) => (y === 0 && x < 0 ? NaN : y ** x), err: 'Invalid input' },
+  ROOT: { // x-th root of y; odd roots of negatives are real
+    arity: 2,
+    err: 'Invalid input',
+    fn: (y, x) => {
+      if (x === 0) return NaN;
+      if (y < 0 && Number.isInteger(x) && Math.abs(x) % 2 === 1) return -((-y) ** (1 / x));
+      return y ** (1 / x);
+    },
   },
+  ARC: { arity: 2, fn: (y, x) => (Math.PI * y * x) / 360 }, // Y = diameter, X = degrees
+  ARCANG: { arity: 2, fn: (y, x) => (y === 0 ? NaN : (360 * x) / (Math.PI * y)), err: 'Divide by 0' }, // Y = diameter, X = arc
+  PCT: { arity: 2, keepY: true, fn: (y, x) => (y * x) / 100 },                        // Y × X%
+  DPCT: { arity: 2, keepY: true, fn: (y, x) => (y === 0 ? NaN : ((x - y) / y) * 100), err: 'Divide by 0' }, // Y → X change
 };
 
-const ERRORS = {
-  DIV: 'Divide by 0', INV: 'Divide by 0', SQRT: 'Invalid input', LOG: 'Invalid input',
-  LN: 'Invalid input', ASIN: 'Invalid input', ACOS: 'Invalid input', TAN: 'Undefined',
-  ROOT: 'Invalid input', POW: 'Invalid input', ARCANG: 'Divide by 0',
-};
+// Stack and constant operations handled directly in exec().
+const STACK_OPS = ['ENTER', 'SWAP', 'RDN', 'RUP', 'DROP', 'CLX', 'CLR', 'LASTX', 'PI'];
+
+// Every operation name exec() understands.
+export const OPS = [...STACK_OPS, ...Object.keys(MATH)];
 
 export class RpnCalc {
   constructor() {
@@ -310,19 +324,6 @@ export class RpnCalc {
     return this.exec('NEG');
   }
 
-  trig(op, x) {
-    const deg = this.s.deg;
-    switch (op) {
-      case 'SIN': return deg ? sinDeg(x) : Math.sin(x);
-      case 'COS': return deg ? cosDeg(x) : Math.cos(x);
-      case 'TAN': return deg ? tanDeg(x) : Math.tan(x);
-      case 'ASIN': return Math.asin(x) / (deg ? D2R : 1);
-      case 'ACOS': return Math.acos(x) / (deg ? D2R : 1);
-      case 'ATAN': return Math.atan(x) / (deg ? D2R : 1);
-    }
-    return NaN;
-  }
-
   exec(op) {
     this.finishEntry();
     this.msg = null;
@@ -330,7 +331,6 @@ export class RpnCalc {
     const s = this.s;
     const k = s.stk;
     const x = k[0], y = k[1];
-    let r;
     switch (op) {
       case 'ENTER':
         this.push();
@@ -361,29 +361,18 @@ export class RpnCalc {
         return this.recall(s.lastX);
       case 'PI':
         return this.recall(Math.PI);
-      case 'PCT':   // Y stays: X = Y * X / 100
-      case 'DPCT':  // Y stays: X = (X - Y) / Y * 100
-        r = op === 'PCT' ? (y * x) / 100 : y === 0 ? NaN : ((x - y) / y) * 100;
-        if (!Number.isFinite(r)) return this.fail(op === 'DPCT' ? 'Divide by 0' : 'Overflow');
+      default: {
+        const m = MATH[op];
+        if (!m) return this.fail('?');
+        const r = m.arity === 1 ? m.fn(x, s.deg) : m.fn(y, x);
+        if (!Number.isFinite(r)) return this.fail(m.err || 'Overflow');
         s.lastX = x;
-        k[0] = r;
-        break;
-      default:
-        if (op in UNARY || ['SIN', 'COS', 'TAN', 'ASIN', 'ACOS', 'ATAN'].includes(op)) {
-          r = op in UNARY ? UNARY[op](x) : this.trig(op, x);
-          if (!Number.isFinite(r)) return this.fail(ERRORS[op] || 'Overflow');
-          s.lastX = x;
-          k[0] = r === 0 ? 0 : r;
-        } else if (op in BINARY) {
-          r = BINARY[op](y, x);
-          if (!Number.isFinite(r)) return this.fail(ERRORS[op] || 'Overflow');
-          s.lastX = x;
-          k[0] = r === 0 ? 0 : r;
+        k[0] = r === 0 ? 0 : r; // drop -0
+        if (m.arity === 2 && !m.keepY) {
           k[1] = k[2];
           k[2] = k[3];
-        } else {
-          return this.fail('?');
         }
+      }
     }
     s.lift = true;
     return true;

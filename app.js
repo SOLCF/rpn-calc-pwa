@@ -1,6 +1,7 @@
 import { RpnCalc, formatFull, formatSI } from './core.js';
 import { History } from './history.js';
 import { VERSION, RELEASED, REPO_URL } from './version.js';
+import { LAYOUT, KEY_INFO, ALT_OF, KEYMAP, helpSections } from './keys.js';
 
 const STORE_KEY = 'rpn-sci-state';
 const HIST_KEY = 'rpn-sci-history';
@@ -9,7 +10,12 @@ const SEEN_KEY = 'rpn-seen-version';
 
 const calc = new RpnCalc();
 const hist = new History(100);
-const prefs = { vibrate: true, win: null, theme: 'dark' }; // win: {w, h} fixed window size on PC
+const prefs = {
+  vibrate: true,
+  win: null,         // {w, h} fixed window size on PC
+  theme: 'dark',     // dark | light | auto | hp35s
+  prevTheme: 'dark', // theme to return to from hp35s
+};
 let shift = false;   // SHIFT key on the keypad (latched until the next key)
 let kbShift = false; // PC keyboard Shift held down (momentary)
 const shifted = () => shift || kbShift;
@@ -21,117 +27,26 @@ const DR_NOTE = { 2: '×2.0（半径→直径）', 0.5: '×0.5（直径→半径
 
 // ---------------------------------------------------------------- keypad
 
-// [label, class, action, shifted label, shifted action, hint or [hint, shifted hint]]
-const KEYS = [
-  ['SHIFT', 'shiftkey', 'SHIFT'], ['x⇄y', 'stack', 'SWAP'], ['R↓', 'stack', 'RDN', 'R↑', 'RUP'],
-  ['LSTx', 'stack', 'LASTX'], ['EEX', 'edit', 'EEX'],
-  ['sin', 'fn', 'SIN', 'sin⁻¹', 'ASIN'], ['cos', 'fn', 'COS', 'cos⁻¹', 'ACOS'],
-  ['tan', 'fn', 'TAN', 'tan⁻¹', 'ATAN'], ['π', 'fn', 'PI'], ['%', 'fn', 'PCT', 'Δ%', 'DPCT'],
-  ['x²', 'fn', 'SQ'], ['√x', 'fn', 'SQRT'], ['yˣ', 'fn', 'POW'], ['ˣ√y', 'fn', 'ROOT'],
-  ['1/x', 'fn', 'INV'],
-  ['log', 'fn', 'LOG', '10ˣ', 'EXP10'], ['ln', 'fn', 'LN', 'eˣ', 'EXP'],
-  ['D⇄R', 'mem', 'DR'], ['弧長', 'mem arc', 'ARC', '角度', 'ARCANG', ['Y⌀ X°', 'Y⌀ X弧']], ['CLR', 'danger', 'CLR'],
-  ['7', 'num', '7'], ['8', 'num', '8'], ['9', 'num', '9'], ['÷', 'op', 'DIV'], ['CLX', 'edit', 'CLX'],
-  ['4', 'num', '4'], ['5', 'num', '5'], ['6', 'num', '6'], ['×', 'op', 'MUL'], ['↶', 'edit', 'UNDO'],
-  ['1', 'num', '1'], ['2', 'num', '2'], ['3', 'num', '3'], ['−', 'op', 'SUB'], ['⌫', 'edit', 'BS'],
-  ['0', 'num', '0'], ['.', 'num', '.'], ['±', 'edit', 'CHS'], ['+', 'op', 'ADD'], ['ENTER', 'enter', 'ENTER'],
-];
-
-// Shown on the キー説明 tab.
-const HELP = [
-  ['スタック', [
-    ['ENTER', 'X を Y に押し上げる（数値の区切り）。続けて押すと X を複製'],
-    ['x⇄y', 'X と Y を入れ替える'],
-    ['R↓', 'スタックを下に回す（SHIFT で R↑：上に回す）'],
-    ['LSTx', '直前の計算に使った X を呼び出す'],
-  ]],
-  ['入力・消去', [
-    ['EEX', '指数入力。2.1 EEX 5 で 2.1×10⁵。入力中に ± で指数の符号を反転'],
-    ['±', '符号反転（指数入力中は指数の符号）'],
-    ['⌫', '入力中は 1 文字削除。入力していないときは X を捨てる（DROP）'],
-    ['CLX', 'X を 0 にする'],
-    ['CLR', 'スタックをすべて 0 にする'],
-    ['↶', '1 つ前に戻す（入力中なら入力を取り消し）。やり直しは 履歴 タブの Redo'],
-  ]],
-  ['四則・べき乗', [
-    ['+ − × ÷', 'Y と X で計算（例: 6 ENTER 2 ÷ → 3）'],
-    ['x²', 'X の 2 乗'],
-    ['√x', 'X の平方根'],
-    ['yˣ', 'Y の X 乗'],
-    ['ˣ√y', 'Y の X 乗根（³√-8 = -2 のように負の数の奇数乗根も可）'],
-    ['1/x', 'X の逆数'],
-    ['%', 'Y の X%（Y は残るので + で「Y の X% 増し」）。SHIFT で Δ%：Y→X の増減率'],
-  ]],
-  ['関数', [
-    ['sin cos tan', '三角関数（設定の DEG/RAD に従う）。SHIFT で逆関数'],
-    ['π', '円周率を入れる'],
-    ['log', '常用対数（SHIFT で 10ˣ）'],
-    ['ln', '自然対数（SHIFT で eˣ）'],
-  ]],
-  ['設計用', [
-    ['D⇄R', '押すたびに元の値の ×2.0 → ×0.5 → ×1.0 と切り替わる（直径⇄半径の換算）'],
-    ['弧長', 'Y = 直径[mm]、X = 角度[°] の弧長 π·D·θ/360。角度は常に度'],
-    ['角度', 'SHIFT＋弧長。Y = 直径[mm]、X = 弧長[mm] から角度[°] = 360·L/(π·D)'],
-  ]],
-  ['表示', [
-    ['STD', '12 桁まで、末尾の 0 を省略。小さい数も 0.00000001 のように小数で表示（1E12 以上と 1E-15 未満のみ指数）'],
-    ['FIX', '小数点以下を ± で指定した桁数に固定'],
-    ['SCI', '指数表示（1.235E4）'],
-    ['ENG', '指数を 3 の倍数にそろえる（12.35E3）'],
-    ['X をタップ', '値をクリップボードにコピー'],
-    ['≈ / 接頭辞', 'X の下に丸める前の値と、k・m などの SI 接頭辞表記を表示'],
-  ]],
-  // Keep in sync with KEYMAP / onKey below.
-  ['PC のキーボード', [
-    ['0〜9 .', '数字・小数点（, でも小数点）'],
-    ['Enter', 'ENTER（Space でも可）'],
-    ['Backspace', '⌫'],
-    ['Esc', 'CLX'],
-    ['Delete', 'CLR'],
-    ['+ - * /', '+ − × ÷'],
-    ['^', 'yˣ'],
-    ['%', '%'],
-    ['e', 'EEX'],
-    ['n', '±'],
-    ['s', 'x⇄y'],
-    ['r / ↓', 'R↓（Shift+r で R↑）'],
-    ['↑', 'R↑'],
-    ['l', 'LSTx'],
-    ['q', '√x'],
-    ['i', '1/x'],
-    ['p', 'π'],
-    ['d', 'D⇄R'],
-    ['a', '弧長（Shift+a で角度）'],
-    ['Ctrl+Z', 'Undo'],
-    ['Ctrl+Y', 'Redo'],
-    ['Shift', '押している間だけ SHIFT（離すと解除）。Shift+英字はそのキーの SHIFT 機能'],
-    ['その他', 'sin・log などはマウスでクリック（Shift を押しながらで逆関数など）。メニュー表示中は Esc で閉じる'],
-  ]],
-];
-
 function buildKeys() {
   const pad = $('keys');
-  for (const [label, cls, action, alt, altAction, hint] of KEYS) {
+  for (const [action, altAction] of LAYOUT) {
+    const info = KEY_INFO[action];
+    const alt = altAction && KEY_INFO[altAction];
     const b = document.createElement('button');
-    b.className = 'k ' + cls + (alt ? ' has-alt' : '');
+    b.className = 'k ' + info.cls + (alt ? ' has-alt' : '');
     b.dataset.act = action;
     if (alt) {
       b.dataset.alt = altAction;
-      b.innerHTML = `<sup class="alt"></sup><span class="main"></span>`;
-      b.querySelector('.alt').textContent = alt;
-      b.dataset.label = label;
-      b.dataset.altLabel = alt;
+      b.innerHTML = '<sup class="alt"></sup><span class="main"></span>';
+      b.querySelector('.alt').textContent = alt.label;
     } else {
       b.innerHTML = '<span class="main"></span>';
     }
-    b.querySelector('.main').textContent = label;
-    if (hint) {
-      const [h1, h2 = h1] = [].concat(hint);
+    b.querySelector('.main').textContent = info.label;
+    if (info.hint) {
       const h = document.createElement('small');
       h.className = 'hint';
-      h.textContent = h1;
-      b.dataset.hint = h1;
-      b.dataset.altHint = h2;
+      h.textContent = info.hint;
       b.appendChild(h);
     }
     pad.appendChild(b);
@@ -149,7 +64,7 @@ function buildKeys() {
 
 function buildHelp() {
   const dl = $('help');
-  for (const [title, rows] of HELP) {
+  for (const [title, rows] of helpSections()) {
     const dt = document.createElement('dt');
     dt.textContent = title;
     dl.appendChild(dt);
@@ -222,34 +137,16 @@ function feedback(ok) {
 
 // Tape text for one operation: [expression, result].
 function describe(action, before) {
+  const info = KEY_INFO[action];
   const f = (v) => calc.format(v);
-  const [x, y] = before.s.stk;
-  const r = f(calc.s.stk[0]);
-  const deg = calc.s.deg ? '°' : '';
-  const sym = { ADD: '+', SUB: '−', MUL: '×', DIV: '÷', POW: '^' };
-  const fn = { SIN: 'sin', COS: 'cos', TAN: 'tan', ASIN: 'sin⁻¹', ACOS: 'cos⁻¹', ATAN: 'tan⁻¹', LOG: 'log', LN: 'ln' };
-  if (action in sym) return [`${f(y)} ${sym[action]} ${f(x)}`, r];
-  if (action in fn) return [`${fn[action]}(${f(x)}${/^(SIN|COS|TAN)$/.test(action) ? deg : ''})`, r];
-  switch (action) {
-    case 'ROOT': return [`${f(x)}√(${f(y)})`, r];
-    case 'ARC': return [`弧長 ⌀${f(y)}, ${f(x)}°`, r];
-    case 'ARCANG': return [`角度 ⌀${f(y)}, 弧${f(x)}`, r + '°'];
-    case 'PCT': return [`${f(y)} × ${f(x)}%`, r];
-    case 'DPCT': return [`Δ% ${f(y)} → ${f(x)}`, r];
-    case 'SQ': return [`(${f(x)})²`, r];
-    case 'SQRT': return [`√(${f(x)})`, r];
-    case 'INV': return [`1/(${f(x)})`, r];
-    case 'EXP10': return [`10^(${f(x)})`, r];
-    case 'EXP': return [`e^(${f(x)})`, r];
-    case 'CHS': return [`−(${f(x)})`, r];
-    case 'DR': return [`${f(calc.dr.base)} ×${calc.drFactor().toFixed(1)}`, r];
-    case 'ENTER': return [`${f(x)} ENTER`, r];
-    case 'BS': return ['DROP', r];
-    default: {
-      const label = { PI: 'π', LASTX: 'LSTx', SWAP: 'x⇄y', RDN: 'R↓', RUP: 'R↑', CLX: 'CLX', CLR: 'CLR' };
-      return [label[action] ?? action, r];
-    }
-  }
+  const a = {
+    x: f(before.s.stk[0]),
+    y: f(before.s.stk[1]),
+    deg: calc.s.deg ? '°' : '',
+    base: calc.dr && f(calc.dr.base),
+    factor: calc.drFactor()?.toFixed(1),
+  };
+  return [info.tape ? info.tape(a) : info.label, f(calc.s.stk[0]) + (info.unit ?? '')];
 }
 
 function undo() {
@@ -289,8 +186,10 @@ function render() {
   $('grp').classList.toggle('on', s.group);
   $('vib').classList.toggle('on', prefs.vibrate);
   for (const b of $('theme').children) b.classList.toggle('on', b.dataset.theme === prefs.theme);
+  $('hp-btn').textContent = prefs.theme === 'hp35s' ? '元に戻す' : 'HP 35s モード';
   renderWindowSetting();
   $('rad').hidden = s.deg;
+  $('ann-rad').hidden = s.deg;
 
   const f = calc.drFactor();
   if (f !== null && !calc.msg) note = DR_NOTE[f];
@@ -316,10 +215,12 @@ function render() {
 
   const pad = $('keys');
   pad.classList.toggle('shifted', shifted());
+  $('ann-shift').hidden = !shifted();
   for (const k of pad.querySelectorAll('.has-alt')) {
-    k.querySelector('.main').textContent = shifted() ? k.dataset.altLabel : k.dataset.label;
+    const info = KEY_INFO[shifted() ? k.dataset.alt : k.dataset.act];
+    k.querySelector('.main').textContent = info.label;
     const h = k.querySelector('.hint');
-    if (h) h.textContent = shifted() ? k.dataset.altHint : k.dataset.hint;
+    if (h) h.textContent = info.hint ?? '';
   }
 
   if (!$('sheet').hidden) renderTape();
@@ -394,6 +295,17 @@ function showTab(tab) {
   }
 }
 
+// HP 35s skin: switch to it, and back to the theme used before.
+function toggleHp35s() {
+  if (prefs.theme === 'hp35s') {
+    prefs.theme = prefs.prevTheme;
+  } else {
+    prefs.prevTheme = prefs.theme;
+    prefs.theme = 'hp35s';
+  }
+  applyTheme();
+}
+
 async function checkUpdate() {
   const status = $('upd-status');
   status.textContent = '確認中…';
@@ -438,7 +350,8 @@ function load() {
   const p = read(PREFS_KEY);
   if (p && typeof p.vibrate === 'boolean') prefs.vibrate = p.vibrate;
   if (p && p.win && Number.isFinite(p.win.w) && Number.isFinite(p.win.h)) prefs.win = { w: p.win.w, h: p.win.h };
-  if (p && ['dark', 'light', 'auto'].includes(p.theme)) prefs.theme = p.theme;
+  if (p && ['dark', 'light', 'auto', 'hp35s'].includes(p.theme)) prefs.theme = p.theme;
+  if (p && ['dark', 'light', 'auto'].includes(p.prevTheme)) prefs.prevTheme = p.prevTheme;
 }
 
 // ---------------------------------------------------------------- theme
@@ -476,16 +389,6 @@ function renderWindowSetting() {
 }
 
 // ---------------------------------------------------------------- physical keyboard
-
-const KEYMAP = {
-  Enter: 'ENTER', ' ': 'ENTER', Backspace: 'BS', Escape: 'CLX', Delete: 'CLR',
-  '+': 'ADD', '-': 'SUB', '*': 'MUL', '/': 'DIV', '^': 'POW', '%': 'PCT',
-  '.': '.', ',': '.', e: 'EEX', n: 'CHS', s: 'SWAP', r: 'RDN',
-  l: 'LASTX', q: 'SQRT', i: 'INV', p: 'PI', d: 'DR', a: 'ARC', ArrowUp: 'RUP', ArrowDown: 'RDN',
-};
-
-// Shifted action of each keypad key, for Shift+letter on a PC keyboard.
-const ALT_OF = Object.fromEntries(KEYS.filter((k) => k[4]).map((k) => [k[2], k[4]]));
 
 function setKbShift(on) {
   if (kbShift === on) return;
@@ -582,6 +485,7 @@ function init() {
     const b = e.target.closest('button');
     if (b) onSetting(() => { prefs.theme = b.dataset.theme; applyTheme(); });
   });
+  $('hp-btn').addEventListener('click', () => onSetting(toggleHp35s));
   lightQuery.addEventListener('change', applyTheme);
   // Also re-check when the app comes back to the front (system theme may have changed meanwhile).
   document.addEventListener('visibilitychange', () => { if (!document.hidden) applyTheme(); });

@@ -1,6 +1,7 @@
 // Run: node test/core.test.mjs
 import { readFileSync } from 'node:fs';
-import { RpnCalc, formatNumber, formatSI, formatFull } from '../core.js';
+import { RpnCalc, OPS, formatNumber, formatSI, formatFull } from '../core.js';
+import { LAYOUT, KEY_INFO, KEYMAP, helpSections } from '../keys.js';
 import { History } from '../history.js';
 import { VERSION } from '../version.js';
 
@@ -216,6 +217,68 @@ const X = (c) => c.s.stk[0];
 { // version in sw.js matches version.js
   const sw = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
   check(sw.includes(`'rpn-${VERSION}'`), `sw.js cache name must be rpn-${VERSION}`);
+}
+
+{ // every file the app loads is precached for offline use (sw.js FILES)
+  const read = (f) => readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+  const sw = read('sw.js');
+  const files = JSON.parse(sw.slice(sw.indexOf('[', sw.indexOf('const FILES')), sw.indexOf('];', sw.indexOf('const FILES')) + 1).replace(/'/g, '"').replace(/,\s*]/, ']'));
+  const needed = new Set();
+  const local = (ref) => ref && !/^(https?:|data:|#|\/\/)/.test(ref);
+  for (const m of read('index.html').matchAll(/(?:href|src)="([^"]+)"/g)) if (local(m[1])) needed.add(m[1]);
+  const jsQueue = [...needed].filter((f) => f.endsWith('.js'));
+  while (jsQueue.length) {
+    const f = jsQueue.pop();
+    for (const m of read(f).matchAll(/from '\.\/([^']+)'/g)) {
+      if (!needed.has(m[1])) { needed.add(m[1]); jsQueue.push(m[1]); }
+    }
+  }
+  for (const css of [...needed].filter((f) => f.endsWith('.css'))) {
+    for (const m of read(css).matchAll(/url\(([^)]+)\)/g)) if (local(m[1].replace(/["']/g, ''))) needed.add(m[1].replace(/["']/g, ''));
+  }
+  for (const icon of JSON.parse(read('manifest.webmanifest')).icons) needed.add(icon.src);
+  for (const f of needed) check(files.includes(f), `sw.js FILES is missing ${f}`);
+  for (const f of files) {
+    if (f === './') continue;
+    let ok = true;
+    try { readFileSync(new URL('../' + f, import.meta.url)); } catch { ok = false; }
+    check(ok, `sw.js FILES lists ${f} but it does not exist`);
+  }
+}
+
+{ // keys.js: one consistent definition per key
+  const actions = LAYOUT.flat();
+  eq(LAYOUT.length, 40, 'keypad is 5 x 8');
+  for (const a of actions) check(KEY_INFO[a], `KEY_INFO has no entry for ${a}`);
+  for (const a of Object.keys(KEY_INFO)) check(actions.includes(a), `${a} is defined but not on the keypad`);
+  // actions handled by the app itself rather than by calc.exec()
+  const appActions = new Set(['SHIFT', 'UNDO', 'BS', 'CHS', 'EEX', '.', 'DR', ...'0123456789']);
+  for (const a of actions) {
+    if (!appActions.has(a)) check(OPS.includes(a), `${a} is on the keypad but core.js has no such op`);
+  }
+  const pcKeys = Object.values(KEY_INFO).flatMap((i) => i.pc ?? []);
+  eq(new Set(pcKeys).size, pcKeys.length, 'no PC key is assigned twice');
+  eq(Object.keys(KEYMAP).length, pcKeys.length, 'KEYMAP covers every PC key');
+  const sample = { x: '2', y: '3', deg: '°', base: '25', factor: '2.0' };
+  for (const [a, info] of Object.entries(KEY_INFO)) {
+    if (info.tape) check(!/undefined|null/.test(info.tape(sample)), `tape text for ${a}`);
+  }
+  for (const [title, rows] of helpSections()) check(rows.length > 0, `help section ${title} is empty`);
+  const pcHelp = helpSections().find(([t]) => t === 'PC のキーボード')[1];
+  check(pcHelp.some(([k, d]) => k === 'a' && d.includes('Shift+a で角度')), 'PC help mentions Shift+a');
+}
+{ // damaged saved history is skipped instead of breaking undo
+  const c = new RpnCalc();
+  const good = c.snapshot();
+  const h = new History();
+  const saved = { steps: [
+    { before: good, after: good, expr: 'ok', result: '0' },
+    { before: { s: {} }, after: good, expr: 'broken', result: '0' },
+    { before: good, after: { s: { stk: [1, 2, 'x', 4] }, entry: [] }, expr: 'broken2', result: '0' },
+  ], i: 3 };
+  check(h.loadJSON(saved, good), 'loads');
+  eq(h.steps.length, 1, 'broken steps dropped'); eq(h.i, 1, 'position clamped');
+  check(h.undo() !== null, 'undo still works');
 }
 
 console.log(fails ? `${fails} FAILED` : 'all passed');

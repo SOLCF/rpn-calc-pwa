@@ -10,6 +10,7 @@
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="skin-hp35s.css">
   <script>
     // Apply the saved theme before first paint (app.js keeps it in sync later).
     try {
@@ -44,6 +45,7 @@
     </header>
 
     <section id="display">
+      <div class="annun" aria-hidden="true"><span>RPN</span><span id="ann-shift" hidden>↰</span><span id="ann-rad" hidden>RAD</span></div>
       <div class="stk"><span class="lbl">T</span><span class="val" id="sT"></span></div>
       <div class="stk"><span class="lbl">Z</span><span class="val" id="sZ"></span></div>
       <div class="stk"><span class="lbl">Y</span><span class="val" id="sY"></span></div>
@@ -86,6 +88,10 @@
           <button data-theme="light">ライト</button>
           <button data-theme="auto">自動</button>
         </div>
+      </div>
+      <div class="setting">
+        <div><b>HP 35s モード</b><small>HP 35s 風の見た目にする</small></div>
+        <button class="pill" id="hp-btn">HP 35s モード</button>
       </div>
 
       <h3>計算</h3>

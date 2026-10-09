@@ -5,14 +5,17 @@
 // changed sw.js (bump VERSION), precaches it in the background and serves
 // it from the next launch.
 // Dev preview (localhost / Tailscale): network first, so edits show at once.
-const VERSION = 'rpn-2.4.1'; // keep in sync with version.js
+const VERSION = 'rpn-2.5.0'; // keep in sync with version.js
 const FILES = [
   './',
   'index.html',
   'style.css',
+  'skin-hp35s.css',
+  'fonts/doto-900-latin.woff2',
   'app.js',
   'core.js',
   'history.js',
+  'keys.js',
   'version.js',
   'manifest.webmanifest',
   'icons/icon-192.png',
@@ -38,8 +41,9 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-function fromNetwork(req) {
-  return fetch(req).then((res) => {
+// Fetches and keeps a copy for offline use. `init` tweaks the fetch.
+function fromNetwork(req, init) {
+  return fetch(init ? req.url : req, init).then((res) => {
     if (res.ok) {
       const copy = res.clone();
       caches.open(VERSION).then((c) => c.put(req, copy));
@@ -54,7 +58,10 @@ self.addEventListener('fetch', (e) => {
   // Explicit "ask the server" requests (the update check) bypass the cache.
   if (req.cache === 'no-store' || req.cache === 'reload') return;
   if (DEV) {
-    e.respondWith(fromNetwork(req).catch(() => caches.match(req, { ignoreSearch: true })));
+    // no-cache: revalidate with the server so the HTTP cache never serves a stale edit.
+    e.respondWith(
+      fromNetwork(req, { cache: 'no-cache' }).catch(() => caches.match(req, { ignoreSearch: true })),
+    );
     return;
   }
   e.respondWith(

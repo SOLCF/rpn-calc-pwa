@@ -119,16 +119,6 @@ header { display: flex; flex-direction: column; gap: 6px; }
 .stepper span { min-width: 18px; text-align: center; font-family: var(--mono); font-weight: 700; }
 .stepper.off { opacity: .35; }
 
-.toggle {
-  background: var(--panel);
-  border-radius: 10px;
-  padding: 10px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--dim);
-  white-space: nowrap;
-}
-.toggle.on { color: var(--txt); box-shadow: inset 0 0 0 1px var(--line); }
 
 /* ---------------------------------------------------------------- display */
 
@@ -389,3 +379,6 @@ header { display: flex; flex-direction: column; gap: 6px; }
 :root[data-theme="light"] .setting .seg button.on { background: var(--panel); }
 /* single-glyph keys whose symbols render small */
 .k[data-act="UNDO"], .k[data-act="CHS"], .k[data-act="BS"] { font-size: 25px; }
+
+/* LCD annunciators: only the HP 35s skin shows them */
+.annun { display: none; }

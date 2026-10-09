@@ -1,0 +1,164 @@
+/* Dot-matrix LCD font: Doto (SIL OFL 1.1, fonts/Doto-OFL.txt), latin subset. */
+@font-face {
+  font-family: "Doto";
+  font-weight: 900;
+  font-display: block;
+  src: url(fonts/doto-900-latin.woff2) format("woff2");
+}
+
+/* HP 35s inspired skin. Active with :root[data-theme="hp35s"] (Settings > HP 35s モード).
+   Near-black body with silver side rails, dark-grey LCD bezel, grey-green
+   LCD with annunciators, two-tone black keys, yellow shift, blue function
+   legends. No logos or product names. */
+
+:root[data-theme="hp35s"] {
+  color-scheme: dark;
+  --bg: #141518;
+  --panel: #2a2d32;
+  --panel2: #3a3e45;
+  --line: #4a4f57;
+  --txt: #f2f2f0;
+  --stk: #c9ccd1;
+  --dim: #8d939c;
+  --err: #ff7b6b;
+  --accent: #f2b63a;     /* left-shift yellow */
+  --shift: #f2b63a;
+  --fn: #6cc4ec;         /* right-shift blue */
+  --mem: #6cc4ec;
+  --key: #26292e;
+  --key-op: #26292e;
+  --key-hi: #26292e;
+  --on-accent: #1b1406;
+  --key-shadow: none;
+
+  --lcd: #b2bba0;
+  --lcd-ink: #1b2116;
+  --lcd-dim: #4a5342;
+  --rail: linear-gradient(180deg, #8d9299, #eef0f2 20%, #a9adb3 50%, #eef0f2 80%, #8d9299);
+}
+
+/* body: near-black with a soft top light */
+:root[data-theme="hp35s"] body {
+  background: radial-gradient(120% 60% at 50% 0%, #24262b 0%, #141518 60%, #0e0f11 100%);
+  background-attachment: fixed;
+}
+
+/* silver rails down both sides */
+:root[data-theme="hp35s"] #app { position: relative; }
+:root[data-theme="hp35s"] #app::before,
+:root[data-theme="hp35s"] #app::after {
+  content: "";
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 4px);
+  bottom: calc(env(safe-area-inset-bottom) + 4px);
+  width: 2px;
+  border-radius: 1px;
+  background: var(--rail);
+  box-shadow: 0 0 2px rgba(255, 255, 255, .15);
+  pointer-events: none;
+}
+:root[data-theme="hp35s"] #app::before { left: 3px; }
+:root[data-theme="hp35s"] #app::after { right: 3px; }
+
+/* ---------------------------------------------------------------- LCD */
+
+:root[data-theme="hp35s"] #display {
+  background:
+    radial-gradient(circle, rgba(0, 0, 0, .05) .6px, transparent .8px) 0 0 / 3px 3px,
+    linear-gradient(180deg, #bec6ad 0%, var(--lcd) 60%, #a6af93 100%);
+  border-radius: 4px;
+  box-shadow:
+    0 0 0 1px #1a1b1e,
+    0 0 0 8px #3b3e43,           /* dark-grey bezel */
+    0 0 0 9px #26282c,
+    inset 0 2px 6px rgba(0, 0, 0, .35);
+  margin: 10px 9px 8px;
+  padding-top: 2px;
+  font-family: "Doto", "Consolas", var(--mono);
+}
+:root[data-theme="hp35s"] .stk .lbl { color: var(--lcd-dim); }
+:root[data-theme="hp35s"] .stk .val { color: var(--lcd-ink); font-weight: 900; font-size: 20px; }
+:root[data-theme="hp35s"] .stk.x { border-bottom-color: rgba(27, 33, 22, .25); }
+:root[data-theme="hp35s"] .stk.x .val { color: var(--lcd-ink); font-weight: 900; font-size: 42px; }
+:root[data-theme="hp35s"] .stk .lbl { font-weight: 900; font-size: 14px; }
+:root[data-theme="hp35s"] #info { font-weight: 900; font-size: 14px; }
+:root[data-theme="hp35s"] .stk.x .val.entering { color: var(--lcd-ink); }
+:root[data-theme="hp35s"] #info { color: var(--lcd-dim); }
+:root[data-theme="hp35s"] #si { color: var(--lcd-ink); }
+:root[data-theme="hp35s"] .msg { color: #7a1a10; }
+:root[data-theme="hp35s"] .msg.note { color: var(--lcd-ink); }
+:root[data-theme="hp35s"] #rad { display: none; } /* shown as an annunciator instead */
+
+/* annunciator row (hidden in other themes) */
+:root[data-theme="hp35s"] .annun {
+  display: flex;
+  gap: 10px;
+  height: 12px;
+  margin-bottom: 1px;
+  font-family: "Doto", system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  color: var(--lcd-ink);
+}
+:root[data-theme="hp35s"] .annun [hidden] { display: none; }
+
+/* ---------------------------------------------------------------- header */
+
+:root[data-theme="hp35s"] .seg,
+:root[data-theme="hp35s"] .stepper,
+:root[data-theme="hp35s"] .gear {
+  background: #2a2c31;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 1px 0 #000;
+}
+:root[data-theme="hp35s"] .seg button,
+:root[data-theme="hp35s"] .stepper button,
+:root[data-theme="hp35s"] .stepper span,
+:root[data-theme="hp35s"] .gear { color: #b9bdc3; }
+:root[data-theme="hp35s"] #modes button.on { background: var(--shift); color: var(--on-accent); }
+
+/* ---------------------------------------------------------------- keys */
+
+/* keys are smaller with wide gaps, like the real keyboard: each key fills
+   80% of its grid cell, so the gap between keys is 1/4 of the key size in
+   both directions on any screen (cq units = size of #keys). */
+:root[data-theme="hp35s"] #keys { gap: 0; padding: 0; container-type: size; }
+:root[data-theme="hp35s"] #keys .k { margin: calc(100cqh / 8 / 10) calc(100cqw / 5 / 10); }
+
+/* glossy face fading to a darker lower edge */
+:root[data-theme="hp35s"] .k {
+  background: linear-gradient(180deg, #474b51 0%, #2c2f34 35%, #1d1f23 70%, #141518 100%);
+  color: #f4f4f2;
+  border-radius: 6px;
+  box-shadow:
+    0 2px 0 #050506,
+    0 3px 5px rgba(0, 0, 0, .5),
+    inset 0 1px 0 rgba(255, 255, 255, .16);
+}
+:root[data-theme="hp35s"] .k.press {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 #050506, inset 0 1px 2px rgba(0, 0, 0, .5);
+}
+:root[data-theme="hp35s"] .k.num { font-family: system-ui, sans-serif; font-weight: 700; }
+:root[data-theme="hp35s"] .k.op,
+:root[data-theme="hp35s"] .k.stack,
+:root[data-theme="hp35s"] .k.edit,
+:root[data-theme="hp35s"] .k.danger,
+:root[data-theme="hp35s"] .k.enter { color: #f4f4f2; }
+:root[data-theme="hp35s"] .k.fn,
+:root[data-theme="hp35s"] .k.mem { color: var(--fn); }
+:root[data-theme="hp35s"] .k sup.alt { color: var(--shift); opacity: 1; }
+:root[data-theme="hp35s"] .k small.hint { color: #9aa0a8; }
+:root[data-theme="hp35s"] .k.enter { letter-spacing: .06em; }
+
+/* yellow shift key */
+:root[data-theme="hp35s"] .k.shiftkey {
+  background: linear-gradient(180deg, #ffd56a 0%, #f2b63a 40%, #dc9b20 75%, #c78a16 100%);
+  color: #1b1406;
+}
+:root[data-theme="hp35s"] #keys.shifted .k.shiftkey { filter: brightness(1.12); color: #1b1406; }
+:root[data-theme="hp35s"] #keys.shifted .k.has-alt { color: var(--shift); }
+
+/* pinkish-red legends for the clearing keys, as on the real keyboard */
+:root[data-theme="hp35s"] .k[data-act="BS"],
+:root[data-theme="hp35s"] .k[data-act="CLR"] { color: #f2708a; }

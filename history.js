@@ -87,7 +87,11 @@ export class History {
   loadJSON(o, current) {
     this.clear(current);
     if (!o || !Array.isArray(o.steps)) return false;
-    const ok = (st) => st && st.before && st.after && typeof st.expr === 'string';
+    // Saved data is checked step by step so a damaged entry cannot break undo.
+    const snapOk = (sn) =>
+      sn && sn.s && Array.isArray(sn.s.stk) && sn.s.stk.length === 4 &&
+      sn.s.stk.every(Number.isFinite) && Array.isArray(sn.entry) && sn.entry.length === 5;
+    const ok = (st) => st && snapOk(st.before) && snapOk(st.after) && typeof st.expr === 'string';
     this.steps = o.steps.filter(ok).slice(-this.limit);
     this.i = Number.isInteger(o.i) ? Math.max(0, Math.min(o.i, this.steps.length)) : this.steps.length;
     return true;
