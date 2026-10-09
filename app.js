@@ -9,8 +9,10 @@ const SEEN_KEY = 'rpn-seen-version';
 
 const calc = new RpnCalc();
 const hist = new History(100);
-const prefs = { vibrate: true, win: null }; // win: {w, h} fixed window size on PC
-let shift = false;
+const prefs = { vibrate: true, win: null, theme: 'dark' }; // win: {w, h} fixed window size on PC
+let shift = false;   // SHIFT key on the keypad (latched until the next key)
+let kbShift = false; // PC keyboard Shift held down (momentary)
+const shifted = () => shift || kbShift;
 let note = null; // transient non-error message
 
 const $ = (id) => document.getElementById(id);
@@ -19,7 +21,7 @@ const DR_NOTE = { 2: '×2.0（半径→直径）', 0.5: '×0.5（直径→半径
 
 // ---------------------------------------------------------------- keypad
 
-// [label, class, action, shifted label, shifted action, hint]
+// [label, class, action, shifted label, shifted action, hint or [hint, shifted hint]]
 const KEYS = [
   ['SHIFT', 'shiftkey', 'SHIFT'], ['x⇄y', 'stack', 'SWAP'], ['R↓', 'stack', 'RDN', 'R↑', 'RUP'],
   ['LSTx', 'stack', 'LASTX'], ['EEX', 'edit', 'EEX'],
@@ -28,7 +30,7 @@ const KEYS = [
   ['x²', 'fn', 'SQ'], ['√x', 'fn', 'SQRT'], ['yˣ', 'fn', 'POW'], ['ˣ√y', 'fn', 'ROOT'],
   ['1/x', 'fn', 'INV'],
   ['log', 'fn', 'LOG', '10ˣ', 'EXP10'], ['ln', 'fn', 'LN', 'eˣ', 'EXP'],
-  ['D⇄R', 'mem', 'DR'], ['弧長', 'mem arc', 'ARC', null, null, 'Y⌀ X°'], ['CLR', 'danger', 'CLR'],
+  ['D⇄R', 'mem', 'DR'], ['弧長', 'mem arc', 'ARC', '角度', 'ARCANG', ['Y⌀ X°', 'Y⌀ X弧']], ['CLR', 'danger', 'CLR'],
   ['7', 'num', '7'], ['8', 'num', '8'], ['9', 'num', '9'], ['÷', 'op', 'DIV'], ['CLX', 'edit', 'CLX'],
   ['4', 'num', '4'], ['5', 'num', '5'], ['6', 'num', '6'], ['×', 'op', 'MUL'], ['↶', 'edit', 'UNDO'],
   ['1', 'num', '1'], ['2', 'num', '2'], ['3', 'num', '3'], ['−', 'op', 'SUB'], ['⌫', 'edit', 'BS'],
@@ -69,6 +71,7 @@ const HELP = [
   ['設計用', [
     ['D⇄R', '押すたびに元の値の ×2.0 → ×0.5 → ×1.0 と切り替わる（直径⇄半径の換算）'],
     ['弧長', 'Y = 直径[mm]、X = 角度[°] の弧長 π·D·θ/360。角度は常に度'],
+    ['角度', 'SHIFT＋弧長。Y = 直径[mm]、X = 弧長[mm] から角度[°] = 360·L/(π·D)'],
   ]],
   ['表示', [
     ['STD', '12 桁まで、末尾の 0 を省略'],
@@ -91,17 +94,18 @@ const HELP = [
     ['e', 'EEX'],
     ['n', '±'],
     ['s', 'x⇄y'],
-    ['r / ↓', 'R↓'],
-    ['R / ↑', 'R↑（R は Shift+r）'],
+    ['r / ↓', 'R↓（Shift+r で R↑）'],
+    ['↑', 'R↑'],
     ['l', 'LSTx'],
     ['q', '√x'],
     ['i', '1/x'],
     ['p', 'π'],
     ['d', 'D⇄R'],
-    ['a', '弧長'],
+    ['a', '弧長（Shift+a で角度）'],
     ['Ctrl+Z', 'Undo'],
     ['Ctrl+Y', 'Redo'],
-    ['その他', 'sin・log などはマウスでクリック。メニュー表示中は Esc で閉じる'],
+    ['Shift', '押している間だけ SHIFT（離すと解除）。Shift+英字はそのキーの SHIFT 機能'],
+    ['その他', 'sin・log などはマウスでクリック（Shift を押しながらで逆関数など）。メニュー表示中は Esc で閉じる'],
   ]],
 ];
 
@@ -122,9 +126,12 @@ function buildKeys() {
     }
     b.querySelector('.main').textContent = label;
     if (hint) {
+      const [h1, h2 = h1] = [].concat(hint);
       const h = document.createElement('small');
       h.className = 'hint';
-      h.textContent = hint;
+      h.textContent = h1;
+      b.dataset.hint = h1;
+      b.dataset.altHint = h2;
       b.appendChild(h);
     }
     pad.appendChild(b);
@@ -136,7 +143,7 @@ function buildKeys() {
     e.preventDefault();
     b.classList.add('press');
     setTimeout(() => b.classList.remove('press'), 90);
-    press(shift && b.dataset.alt ? b.dataset.alt : b.dataset.act);
+    press(shifted() && b.dataset.alt ? b.dataset.alt : b.dataset.act);
   });
 }
 
@@ -226,6 +233,7 @@ function describe(action, before) {
   switch (action) {
     case 'ROOT': return [`${f(x)}√(${f(y)})`, r];
     case 'ARC': return [`弧長 ⌀${f(y)}, ${f(x)}°`, r];
+    case 'ARCANG': return [`角度 ⌀${f(y)}, 弧${f(x)}`, r + '°'];
     case 'PCT': return [`${f(y)} × ${f(x)}%`, r];
     case 'DPCT': return [`Δ% ${f(y)} → ${f(x)}`, r];
     case 'SQ': return [`(${f(x)})²`, r];
@@ -280,6 +288,7 @@ function render() {
   $('digits').classList.toggle('off', s.mode === 'STD');
   $('grp').classList.toggle('on', s.group);
   $('vib').classList.toggle('on', prefs.vibrate);
+  for (const b of $('theme').children) b.classList.toggle('on', b.dataset.theme === prefs.theme);
   renderWindowSetting();
   $('rad').hidden = s.deg;
 
@@ -306,9 +315,11 @@ function render() {
   $('si').textContent = si && /[a-zµ]/i.test(si) ? si : '';
 
   const pad = $('keys');
-  pad.classList.toggle('shifted', shift);
+  pad.classList.toggle('shifted', shifted());
   for (const k of pad.querySelectorAll('.has-alt')) {
-    k.querySelector('.main').textContent = shift ? k.dataset.altLabel : k.dataset.label;
+    k.querySelector('.main').textContent = shifted() ? k.dataset.altLabel : k.dataset.label;
+    const h = k.querySelector('.hint');
+    if (h) h.textContent = shifted() ? k.dataset.altHint : k.dataset.hint;
   }
 
   if (!$('sheet').hidden) renderTape();
@@ -427,6 +438,19 @@ function load() {
   const p = read(PREFS_KEY);
   if (p && typeof p.vibrate === 'boolean') prefs.vibrate = p.vibrate;
   if (p && p.win && Number.isFinite(p.win.w) && Number.isFinite(p.win.h)) prefs.win = { w: p.win.w, h: p.win.h };
+  if (p && ['dark', 'light', 'auto'].includes(p.theme)) prefs.theme = p.theme;
+}
+
+// ---------------------------------------------------------------- theme
+
+const lightQuery = matchMedia('(prefers-color-scheme: light)');
+
+function applyTheme() {
+  const t = prefs.theme === 'auto' ? (lightQuery.matches ? 'light' : 'dark') : prefs.theme;
+  document.documentElement.dataset.theme = t;
+  // Status bar / title bar color follows the page background.
+  document.querySelector('meta[name="theme-color"]')
+    .setAttribute('content', getComputedStyle(document.documentElement).getPropertyValue('--bg').trim());
 }
 
 // ---------------------------------------------------------------- PC window size
@@ -456,11 +480,24 @@ function renderWindowSetting() {
 const KEYMAP = {
   Enter: 'ENTER', ' ': 'ENTER', Backspace: 'BS', Escape: 'CLX', Delete: 'CLR',
   '+': 'ADD', '-': 'SUB', '*': 'MUL', '/': 'DIV', '^': 'POW', '%': 'PCT',
-  '.': '.', ',': '.', e: 'EEX', E: 'EEX', n: 'CHS', s: 'SWAP', r: 'RDN', R: 'RUP',
+  '.': '.', ',': '.', e: 'EEX', n: 'CHS', s: 'SWAP', r: 'RDN',
   l: 'LASTX', q: 'SQRT', i: 'INV', p: 'PI', d: 'DR', a: 'ARC', ArrowUp: 'RUP', ArrowDown: 'RDN',
 };
 
+// Shifted action of each keypad key, for Shift+letter on a PC keyboard.
+const ALT_OF = Object.fromEntries(KEYS.filter((k) => k[4]).map((k) => [k[2], k[4]]));
+
+function setKbShift(on) {
+  if (kbShift === on) return;
+  kbShift = on;
+  render();
+}
+
 function onKey(e) {
+  if (e.key === 'Shift') {
+    setKbShift(true);
+    return;
+  }
   if (e.altKey || e.metaKey) return;
   if (!$('sheet').hidden) {
     if (e.key === 'Escape') closeMenu();
@@ -476,6 +513,11 @@ function onKey(e) {
     }
   } else if (/^[0-9]$/.test(e.key)) {
     action = e.key;
+  } else if (/^[a-z]$/i.test(e.key)) {
+    // Letters: Shift selects the key's SHIFT function (Shift+a = angle).
+    // Symbols are left alone since many need Shift just to be typed.
+    const base = KEYMAP[e.key.toLowerCase()] ?? null;
+    action = base && e.shiftKey ? ALT_OF[base] ?? base : base;
   } else {
     action = KEYMAP[e.key] ?? null;
   }
@@ -494,6 +536,7 @@ function onSetting(fn) {
 
 function init() {
   load();
+  applyTheme();
   applyWindowSize();
   buildKeys();
   buildHelp();
@@ -535,6 +578,14 @@ function init() {
   });
   $('grp').addEventListener('click', () => onSetting(() => calc.toggleGroup()));
   $('vib').addEventListener('click', () => onSetting(() => { prefs.vibrate = !prefs.vibrate; }));
+  $('theme').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) onSetting(() => { prefs.theme = b.dataset.theme; applyTheme(); });
+  });
+  lightQuery.addEventListener('change', applyTheme);
+  // Also re-check when the app comes back to the front (system theme may have changed meanwhile).
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) applyTheme(); });
+  window.addEventListener('focus', applyTheme);
   $('win-fix').addEventListener('click', () => onSetting(() => { prefs.win = { w: outerWidth, h: outerHeight }; }));
   $('win-free').addEventListener('click', () => onSetting(() => { prefs.win = null; }));
   // Anything not served from GitHub Pages (localhost, the Tailscale preview) is a dev build.
@@ -553,6 +604,8 @@ function init() {
   } catch { /* storage unavailable */ }
 
   document.addEventListener('keydown', onKey);
+  document.addEventListener('keyup', (e) => { if (e.key === 'Shift') setKbShift(false); });
+  window.addEventListener('blur', () => setKbShift(false));
   window.addEventListener('resize', render);
   render();
 

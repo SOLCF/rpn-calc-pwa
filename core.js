@@ -154,6 +154,7 @@ const BINARY = {
   DIV: (y, x) => (x === 0 ? NaN : y / x),
   POW: (y, x) => (y === 0 && x < 0 ? NaN : y ** x),
   ARC: (y, x) => (Math.PI * y * x) / 360, // arc length: Y = diameter, X = degrees
+  ARCANG: (y, x) => (y === 0 ? NaN : (360 * x) / (Math.PI * y)), // angle [deg]: Y = diameter, X = arc length
   ROOT: (y, x) => { // x-th root of y; odd roots of negatives are real
     if (x === 0) return NaN;
     if (y < 0 && Number.isInteger(x) && Math.abs(x) % 2 === 1) return -((-y) ** (1 / x));
@@ -164,7 +165,7 @@ const BINARY = {
 const ERRORS = {
   DIV: 'Divide by 0', INV: 'Divide by 0', SQRT: 'Invalid input', LOG: 'Invalid input',
   LN: 'Invalid input', ASIN: 'Invalid input', ACOS: 'Invalid input', TAN: 'Undefined',
-  ROOT: 'Invalid input', POW: 'Invalid input',
+  ROOT: 'Invalid input', POW: 'Invalid input', ARCANG: 'Divide by 0',
 };
 
 export class RpnCalc {

@@ -136,6 +136,12 @@ const X = (c) => c.s.stk[0];
   c.setDeg(false);
   c.exec('CLR'); type(c, '100 180'); c.exec('ARC'); near(X(c), 50 * Math.PI, 'arc ignores RAD mode');
   c.exec('CLR'); type(c, '1 2 3'); c.exec('ARC'); eq(c.s.stk[1], 1, 'arc drops stack');
+  // SHIFT: angle from diameter and arc length
+  c.exec('CLR'); type(c, '100'); c.exec('ENTER'); c.exec('PI'); type(c, '25'); c.exec('MUL'); c.exec('ARCANG');
+  near(X(c), 90, 'angle from arc'); // arc of 90deg on D100 = 25*pi
+  c.exec('CLR'); type(c, '0 10'); check(!c.exec('ARCANG') && c.msg === 'Divide by 0', 'angle with D=0');
+  c.exec('CLR'); type(c, '80'); c.exec('ENTER'); type(c, '30'); c.exec('ARC'); const L = X(c);
+  c.exec('CLR'); type(c, '80'); c.exec('ENTER'); c.recall(L); c.exec('ARCANG'); near(X(c), 30, 'arc -> angle round trip');
 }
 { // formatting
   eq(formatNumber(1234567.891), '1,234,567.891', 'std group');

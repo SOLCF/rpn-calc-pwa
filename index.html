@@ -10,6 +10,14 @@
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="style.css">
+  <script>
+    // Apply the saved theme before first paint (app.js keeps it in sync later).
+    try {
+      var t = (JSON.parse(localStorage.getItem('rpn-prefs')) || {}).theme || 'dark';
+      if (t === 'auto') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      document.documentElement.dataset.theme = t;
+    } catch (e) { /* storage unavailable: default dark */ }
+  </script>
   <script type="module" src="app.js"></script>
 </head>
 <body>
@@ -70,6 +78,16 @@
     </div>
 
     <div class="tab" id="tab-settings">
+      <h3>表示</h3>
+      <div class="setting">
+        <div><b>テーマ</b><small>自動は端末のライト／ダーク設定に合わせる</small></div>
+        <div class="seg theme" id="theme">
+          <button data-theme="dark">ダーク</button>
+          <button data-theme="light">ライト</button>
+          <button data-theme="auto">自動</button>
+        </div>
+      </div>
+
       <h3>計算</h3>
       <div class="setting">
         <div><b>角度の単位</b><small>sin・cos・tan とその逆関数に適用。弧長キーは常に度。</small></div>
